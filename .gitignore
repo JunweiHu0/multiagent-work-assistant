@@ -1,0 +1,15 @@
+# dependencies
+node_modules/
+
+# probe / adapter runtime state (machine-specific, never commit)
+adapters/**/probe-observed.jsonl
+adapters/**/*.local.json
+
+# local tooling / editor state
+.claude/
+.obsidian/
+
+# logs & OS cruft
+*.log
+.DS_Store
+Thumbs.db
