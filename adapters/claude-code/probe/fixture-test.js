@@ -17,7 +17,9 @@ const fs = require('fs');
 const path = require('path');
 
 const PROBE = path.join(__dirname, 'probe-hook.js');
-const OUT = path.join(__dirname, 'probe-observed.jsonl');
+// Fixture output goes to a SEPARATE file (see SN_CC_PROBE_OUT in probe-hook.js)
+// so test noise never mixes with real hook observations.
+const OUT = path.join(__dirname, 'probe-fixture-output.jsonl');
 
 // Marker strings that MUST NOT leak into probe-observed.jsonl.
 const LEAK_MARKERS = [
@@ -71,7 +73,10 @@ function main() {
 
   for (const [label, payload] of FIXTURES) {
     const input = typeof payload === 'string' ? payload : JSON.stringify(payload);
-    const res = spawnSync(process.execPath, [PROBE, label], { input, encoding: 'utf8', timeout: 10000 });
+    const res = spawnSync(process.execPath, [PROBE, label], {
+      input, encoding: 'utf8', timeout: 10000,
+      env: { ...process.env, SN_CC_PROBE_OUT: OUT },
+    });
     check(res.status === 0, `${label}: exit 0`);
     check((res.stdout || '') === '', `${label}: empty stdout`);
   }

@@ -1,7 +1,7 @@
 # Claude Code Hooks Probe 计划（Phase 2.1）
 
 - 日期：2026-07-06
-- 状态：probe 脚本就绪、自测通过；**等待真实 hook 触发数据**
+- 状态：真实 hook 已覆盖 SessionStart / PreToolUse / PostToolUse / Stop；**Notification 与失败态还需补测**
 - 脚本：[`adapters/claude-code/probe/probe-hook.js`](../../adapters/claude-code/probe/probe-hook.js)
 - 自测：[`adapters/claude-code/probe/fixture-test.js`](../../adapters/claude-code/probe/fixture-test.js)（24 项断言，含"假密钥/假源码/假 prompt 不落盘"泄漏自检）
 - 产出去向：probe 结论回填本文档 §7，adapter 设计在
@@ -120,12 +120,53 @@ Get-Content adapters\claude-code\probe\probe-observed.jsonl
 删除实验项目的 `.claude/settings.json`（或其中 `hooks` 段），开新会话即彻底
 移除。probe 从不改任何全局状态；`probe-observed.jsonl` 是唯一产物，看完可删。
 
-## 7. 实测结论（待回填）
+## 7. 实测结论（2026-07-06 路 A 后回填）
 
-> 真实 hook 触发后在这里回填 Q1-Q7 的答案与脱敏样例记录。
+### 7.1 测试方法与环境
 
-**先行观察（2026-07-06，来自 probe 自测，非 hook 环境，仅供参考）**：自测运行在
-Claude Code 的 Bash 工具子进程里，该环境下裸 `node` 可解析
-（`C:\Program Files\nodejs\node.exe`），且存在 `CLAUDE_CODE_SESSION_ID`、
-`CLAUDECODE` 等环境变量——如果 hook 进程同样继承这些，adapter 将获得 stdin 之外
-的第二个 sessionId 来源。**hook 的真实执行环境可能不同，以真实记录为准。**
+- Windows 11，Node v24.18.0。
+- 第一轮：`npx -y @anthropic-ai/claude-code` 拉起 Claude Code CLI 2.1.201。该会话卡在 CLI 认证，但 `SessionStart` 在认证前真实触发，证明项目级 `.claude/settings.json` 会被加载。
+- 第二轮（路 A）：桌面版 Claude Code 以本仓库为项目目录启动新会话，实际触发 Bash / Read / Write / Stop 等 hooks。`probe-observed.jsonl` 目前有 13 条真实记录。
+- 自测输出已通过 `SN_CC_PROBE_OUT` 分离到 `probe-fixture-output.jsonl`，不会再混入真实 hook 记录。
+
+### 7.2 事件覆盖
+
+| hook / tool | 记录数 | 结论 |
+| --- | ---: | --- |
+| `SessionStart` | 3 | ✅ 会话启动会触发；字段含 `session_id` / `transcript_path` / `cwd` / `hook_event_name` / `source` |
+| `PreToolUse:Bash` | 3 | ✅ 字段含 `tool_input.command` / `tool_input.description` / `tool_use_id` |
+| `PostToolUse:Bash` | 2 | ✅ 字段含 `tool_response.stdout` / `stderr` / `interrupted` / `isImage` / `noOutputExpected` / `duration_ms` |
+| `PreToolUse:Read` | 1 | ✅ 字段含 `tool_input.file_path` |
+| `PostToolUse:Read` | 1 | ✅ `tool_response.file.content` 会出现为 `string(len=N)`；正式 adapter 必须白名单字段，绝不能透传正文 |
+| `PreToolUse:Write` | 1 | ✅ 字段含 `tool_input.file_path` / `tool_input.content`；正式 adapter 只取 basename，不读 content |
+| `PostToolUse:Write` | 1 | ✅ `tool_response.content` / `structuredPatch` 等会出现；正式 adapter 必须忽略正文和 patch |
+| `Stop` | 1 | ✅ 字段含 `last_assistant_message: string(len=N)`；正式 adapter 只发 `turn_ended`，不读取/发送消息正文 |
+| `Notification` | 0 | ⚠️ 本轮未观测到，权限/空闲区分仍未闭环 |
+
+### 7.3 Q1-Q7 回答
+
+| 问题 | 结论 |
+| --- | --- |
+| Q1 node 可执行性 | ✅ 裸 `node` 在 CLI 与桌面版路 A hook 环境中均可解析，`execPath` 为 `C:\Program Files\nodejs\node.exe`。桌面版路 A 的 `PATH` 为 17 项并包含 Node，因此 settings 里可先使用 `node`，不需要 Codex plugin 那种 `C:\PROGRA~1` 绝对路径。 |
+| Q2 cwd | ✅ `cwd` 稳定为项目目录：`...\multiagent-work-assistant`。 |
+| Q3 `CLAUDE_*` 环境变量 | ✅ 桌面版路 A 中可见 `CLAUDE_CODE_SESSION_ID`、`CLAUDE_PROJECT_DIR`、`CLAUDE_EFFORT`、`CLAUDE_CODE_ENTRYPOINT`、`CLAUDE_AGENT_SDK_VERSION` 等。`CLAUDE_CODE_SESSION_ID` 可作为 `session_id` 的 fallback，但首选仍是 stdin payload。 |
+| Q4 payload / session_id | ✅ 已观测的 `SessionStart`、`PreToolUse`、`PostToolUse`、`Stop` 全部携带 `session_id: string(len=36)`。工具调用还携带 `prompt_id`、`permission_mode`、`effort`、`tool_use_id`；PostToolUse 额外携带 `duration_ms`。 |
+| Q5 Notification 权限 vs 空闲 | ⚠️ 未完成。本轮真实日志没有 `Notification` 记录，因此还不能判断 Claude Code 是否会把权限等待/空闲等待发到 Notification hook，也不能依赖文本启发式上线 `permission_required`。 |
+| Q6 PostToolUse 失败标志 | ⚠️ 未完成。已观测的 Bash PostToolUse 只有 `stdout` / `stderr` / `interrupted` / `isImage` / `noOutputExpected`，没有 `exit_code` / `is_error` 这类明确失败字段；疑似失败命令没有形成可判定的失败 PostToolUse 记录。MVP 不应从输出正文推断失败。 |
+| Q7 spawn node 开销 | ✅ 本轮 13 次 hook 调用未观察到明显卡顿；正式 adapter 仍应保持零 stdout、exit 0、短超时、失败静默。 |
+
+### 7.4 对 Phase 2.2 adapter 的直接结论
+
+- `sessionId`：使用 stdin `session_id`；缺失时再退到 `CLAUDE_CODE_SESSION_ID`。
+- `Bash`：`PreToolUse` 可映射为 `command_running`，只发送脱敏命令摘要；`PostToolUse` 默认映射为 `step_done`。
+- `Read`：`PreToolUse` 可映射为 `file_reading`，只发送 basename。
+- `Write` / `Edit` / `MultiEdit`：`PreToolUse` 可映射为 `file_editing`，只发送 basename。PostToolUse 中可能包含 content / patch，必须忽略。
+- `Stop`：可映射为 `turn_ended`，带 sessionId；不要读取或发送 `last_assistant_message`。
+- `Notification` / `permission_required`：暂不进入 Phase 2.2 MVP 的强验收，除非补测拿到真实 Notification 记录。
+- `error`：暂不根据 PostToolUse 上线通用 `error` 映射；只有未来观测到明确小状态字段（如 exit code / is_error）时再启用。
+
+### 7.5 剩余补测
+
+1. **Notification 补测**：需要构造一个确定会触发 Claude Code Notification hook 的场景，并确认是否能区分权限等待与空闲等待。
+2. **失败态补测**：需要构造一个会产生 `PostToolUse` 且带明确失败字段的工具调用；如果 Claude Code 不提供结构化失败字段，Phase 2.2 只发 `step_done`，把失败识别留到后续。
+3. 补测前不要实现正式 adapter 中的 `permission_required` / 通用 `error`，避免把不可靠推断产品化。

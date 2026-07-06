@@ -3,6 +3,7 @@ node_modules/
 
 # probe / adapter runtime state (machine-specific, never commit)
 adapters/**/probe-observed.jsonl
+adapters/**/probe-fixture-output.jsonl
 adapters/**/*.local.json
 
 # local tooling / editor state

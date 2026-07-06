@@ -27,7 +27,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const OUT = path.join(__dirname, 'probe-observed.jsonl');
+// SN_CC_PROBE_OUT lets the fixture self-test write to a separate file so test
+// noise can never mix with real hook observations.
+const OUT = process.env.SN_CC_PROBE_OUT || path.join(__dirname, 'probe-observed.jsonl');
 const SENSITIVE_KEY = /(token|api[_-]?key|authorization|auth|secret|password|passwd|pwd|credential|cookie|private[_-]?key|access[_-]?key)/i;
 const MAX_DEPTH = 3;
 const SAFE_ID = /^[A-Za-z0-9._\-]{1,80}$/; // tool names / event names are plain identifiers
