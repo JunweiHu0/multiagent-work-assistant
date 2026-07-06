@@ -21,8 +21,10 @@
 - 目标：用诊断 hook 实测 Windows 下 Claude Code hooks
   （PreToolUse / PostToolUse / Notification / Stop）的 stdin 字段结构、cwd、
   node 可执行性（Codex 那次的已知坑型）。
-- 交付物：`adapters/claude-code/probe/` 诊断脚本 +
-  `docs/architecture/claude-code-adapter-plan.md` 实测记录与映射表。
+- 交付物：`adapters/claude-code/probe/` 诊断脚本（✅ 已就绪，自测 24 项通过）+
+  `docs/claude-code/claude-code-hooks-probe-plan.md`（接入/触发/判据，✅）+
+  `docs/claude-code/claude-code-adapter-mapping.md`（adapter 蓝图，✅ 待 probe 回填）。
+  剩余：真实 hook 触发 → 回填 probe 结论。
 - 不做：正式 adapter 实现、UI 改动、orchestrator。
 - 验收：四类事件的脱敏字段样例齐全；`session_id` 存在性有结论；
   node 路径策略有结论。
