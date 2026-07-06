@@ -1,16 +1,35 @@
-﻿# Multiagent Work Assistant 下一阶段任务规划
+# Multiagent Work Assistant 下一阶段任务规划
 
 - 日期：2026-07-06
 - 主仓库：`multiagent-work-assistant`
 - 关联显示层仓库：`codex-task-pet`
-- 当前阶段：Phase 2.1 前置规划
+- 当前阶段：Phase 2.1 真实 Claude Code hooks probe 主体完成，准备进入 Phase 2.2.0 Claude Code adapter MVP
 - 本文目的：在上下文 compact 或换电脑后，继续按本文推进，不依赖聊天历史。
 
 ---
 
-## 1. 当前结论
+## 0. Compact 后先看这里
 
-SuperNoNo 已经拆成两个方向：
+当前最新可靠进展：
+
+- `multiagent-work-assistant` 的 `main` 已提交到：`ec6680a Complete Claude Code hooks probe analysis`。
+- Phase 2.1 已完成主体：真实 Claude Code 桌面版 hook probe 已覆盖 `SessionStart` / `PreToolUse` / `PostToolUse` / `Stop`。
+- 真实记录覆盖了 `Bash` / `Read` / `Write`，共 13 条真实 hook 记录。
+- `Notification` 没有观测到；失败态也没有可靠 `exit_code` / `is_error` 字段。
+- 因此下一步不要做完整权限/错误链路，先做 **Phase 2.2.0：Claude Code adapter MVP**。
+- MVP 范围只做：`Bash -> command_running`、`Read -> file_reading`、`Write/Edit -> file_editing`、`PostToolUse -> step_done`、`Stop -> turn_ended`。
+- 暂缓：`Notification -> permission_required`、通用 `error`、`permission_resolved` 合成。
+
+当前工作树注意事项：
+
+- 可能还存在两个 probe 测试残留未跟踪文件：`probe-authcheck.txt`、`scratch-probe.txt`。它们不应提交。
+- `.claude/`、`probe-observed.jsonl`、`probe-fixture-output.jsonl` 已被 ignore。
+
+---
+
+## 1. 项目边界
+
+SuperNoNo 已拆成两个仓库方向：
 
 1. `codex-task-pet`：桌宠显示层。
    - 负责 Electron 桌宠 UI、托盘、小窗、面板、Live2D/SVG、`127.0.0.1:4174/signal` 本地桥。
@@ -49,186 +68,121 @@ SuperNoNo 已经拆成两个方向：
 
 ### 2.2 `multiagent-work-assistant` 已完成
 
-- 新仓库已创建，用于承载 multiagent 主线。
-- 已有文档目录：
-  - `docs/architecture/`
-  - `docs/handoff/`
-  - `docs/prd/`
-  - `docs/strategy/`
-  - `docs/roadmap.md`
-- 下一步应在此仓库中推进 Claude Code hooks probe。
+文档与仓库结构：
+
+- `docs/architecture/`
+- `docs/handoff/`
+- `docs/prd/`
+- `docs/strategy/`
+- `docs/roadmap.md`
+- `docs/planning/next-task-plan.md`
+
+Claude Code probe 交付：
+
+- `adapters/claude-code/probe/probe-hook.js`
+- `adapters/claude-code/probe/fixture-test.js`
+- `docs/claude-code/claude-code-hooks-probe-plan.md`
+- `docs/claude-code/claude-code-adapter-mapping.md`
+
+验证结果：
+
+- `node --check adapters/claude-code/probe/probe-hook.js` 通过。
+- `node --check adapters/claude-code/probe/fixture-test.js` 通过。
+- `node adapters/claude-code/probe/fixture-test.js` 为 `ALL PASS`。
+- fixture 输出通过 `SN_CC_PROBE_OUT` 分离，不再污染真实 probe 日志。
 
 ---
 
-## 3. 现在不要做什么
+## 3. Phase 2.1 真实 probe 结论
+
+真实 Claude Code 桌面版路 A probe 已观测：
+
+| hook / tool | 记录数 | 结论 |
+| --- | ---: | --- |
+| `SessionStart` | 3 | 会话启动会触发；字段含 `session_id` / `transcript_path` / `cwd` / `hook_event_name` / `source` |
+| `PreToolUse:Bash` | 3 | 字段含 `tool_input.command` / `tool_input.description` / `tool_use_id` |
+| `PostToolUse:Bash` | 2 | 字段含 `tool_response.stdout` / `stderr` / `interrupted` / `isImage` / `noOutputExpected` / `duration_ms` |
+| `PreToolUse:Read` | 1 | 字段含 `tool_input.file_path` |
+| `PostToolUse:Read` | 1 | `tool_response.file.content` 会出现为 `string(len=N)`，正式 adapter 必须忽略正文 |
+| `PreToolUse:Write` | 1 | 字段含 `tool_input.file_path` / `tool_input.content`，正式 adapter 只取 basename |
+| `PostToolUse:Write` | 1 | `tool_response.content` / `structuredPatch` 会出现，正式 adapter 必须忽略正文和 patch |
+| `Stop` | 1 | 字段含 `last_assistant_message: string(len=N)`，正式 adapter 只发 `turn_ended` |
+| `Notification` | 0 | 未观测到，不能上线权限识别 |
+
+已确认：
+
+- 裸 `node` 在桌面版 Claude Code hook 环境可解析。
+- `cwd` 稳定为项目目录。
+- 已观测事件全部携带 `session_id: string(len=36)`。
+- 环境变量里有 `CLAUDE_CODE_SESSION_ID`，可作为 sessionId fallback。
+- 本轮 13 次 hook 调用未观察到明显卡顿。
+
+未确认：
+
+- `Notification` 是否能表示权限请求或空闲等待。
+- `PostToolUse` 是否有可靠结构化失败字段。
+
+直接结论：
+
+> Phase 2.2 可以做 Claude Code adapter MVP，但第一版不要做 `permission_required` 和通用 `error`。
+
+---
+
+## 4. 现在不要做什么
 
 为了避免重新陷入桌宠打磨，本阶段明确不做：
 
 - 不继续优化桌宠 UI、Live2D、hover、窗口尺寸。
 - 不重写 `codex-task-pet` 的 `stateEngine.js`。
 - 不改 Codex plugin hooks 的已验证映射。
-- 不做完整 Claude Code adapter。
+- 不做完整权限链路。
+- 不做通用 error 推断。
 - 不做 orchestrator、大型 dashboard、数据库、云同步。
-- 不把 prompt、源码正文、diff、transcript、token、secret 写入日志。
+- 不把 prompt、源码正文、diff、transcript、tool output、token、secret 写入日志或 signal。
 
 ---
 
-## 4. 下一阶段总目标
+## 5. 下一阶段总目标
 
-下一阶段目标是完成 **Phase 2.1：Claude Code hooks probe**。
+下一阶段是 **Phase 2.2.0：Claude Code adapter MVP**。
 
-这一步的目标不是写正式 adapter，而是确认 Claude Code 在 Windows 上的真实 hook 行为：
+目标不是一次做完完整 Claude Code adapter，而是先完成一个可真实驱动 SuperNoNo 的安全最小版：
 
-- hook 是否能触发。
-- hook 的 `stdin` payload 实际字段有哪些。
-- 是否有稳定的 `session_id`。
-- `tool_name` 如何表示 Bash / Read / Edit / Write 等工具。
-- `Notification` 是否能表示权限请求或等待用户输入。
-- `Stop` 是否能表示一个 agent turn 结束。
-- hook 执行环境里 `node` 是否可用。
-- hook 失败是否影响 Claude Code 主流程。
+- `PreToolUse:Bash` -> `command_running`
+- `PreToolUse:Read` -> `file_reading`
+- `PreToolUse:Write/Edit/MultiEdit` -> `file_editing`
+- `PostToolUse` -> `step_done`
+- `Stop` -> `turn_ended`
 
-完成 probe 后，才进入 **Phase 2.2：Claude Code adapter MVP**。
+暂缓：
+
+- `Notification` -> `permission_required`
+- `permission_resolved` 合成
+- `PostToolUse` -> `error`
 
 ---
 
-## 5. Phase 2.1 任务拆分
+## 6. Phase 2.2.0 任务拆分
 
-### T2.1.1 整理 Claude Code hooks probe 计划
+### T2.2.0 确认 adapter MVP 边界
 
-建议新增：
+先阅读：
 
 ```text
 docs/claude-code/claude-code-hooks-probe-plan.md
 docs/claude-code/claude-code-adapter-mapping.md
+docs/architecture/signal-protocol-v0.2-plan.md
 ```
 
-内容要求：
-
-- 列出需要验证的 hook 类型：
-  - `PreToolUse`
-  - `PostToolUse`
-  - `Notification`
-  - `Stop`
-  - 可选：`SessionStart`
-- 每类 hook 需要验证：
-  - 是否触发
-  - `stdin` 字段结构
-  - `session_id` 是否存在
-  - `tool_name` 取值
-  - 是否包含敏感正文
-  - 是否能安全映射到 SuperNoNo signal
-- 明确不碰：
-  - transcript
-  - prompt 正文
-  - source body
-  - diff body
-  - token / secret
+确认本轮只实现已被 probe 支撑的映射：Bash / Read / Write-Edit / PostToolUse step_done / Stop turn_ended。
 
 验收：
 
-- 文档能指导另一个 agent 在 Windows 上完成 probe。
-- 文档没有要求读取或保存敏感内容。
+- 文档或 README 明确说明 `permission_required` 和 `error` 暂缓。
 
 ---
 
-### T2.1.2 实现最小 probe 脚本
-
-建议目录：
-
-```text
-probes/claude-code/
-  README.md
-  hook-probe.js
-  hook-settings.example.json
-  runtime/              # gitignore，存本地观察结果
-```
-
-`hook-probe.js` 只允许记录：
-
-- `observedAt`
-- hook 类型
-- `cwd`
-- `process.execPath`
-- `PATH` 是否包含 node 相关路径
-- `node -v` 是否可执行
-- stdin JSON 是否可解析
-- stdin 顶层字段名
-- 字段类型摘要，例如：
-  - `session_id: string(len=...)`
-  - `tool_name: string(len=...)`
-  - `tool_input: object(keys=[...])`
-- 敏感 key 只记录 `[redacted-key]`
-
-禁止记录：
-
-- prompt 内容
-- tool input 的完整正文
-- source code
-- diff
-- command full output
-- transcript
-- token / secret / api key
-
-验收：
-
-- `node --check probes/claude-code/hook-probe.js` 通过。
-- SuperNoNo 未运行时，probe 不报错、不阻塞 Claude Code。
-- 观察结果只包含结构，不包含正文。
-
----
-
-### T2.1.3 人工触发 Claude Code hooks
-
-需要用户在 Claude Code 中触发若干动作：
-
-1. 触发 `PreToolUse` / `PostToolUse`：
-   - 让 Claude Code 实际运行一个 shell 命令，例如 `echo supernono-claude-probe`。
-
-2. 触发文件读取类工具：
-   - 让 Claude Code 读取当前仓库某个 README。
-
-3. 触发文件编辑类工具：
-   - 让 Claude Code 修改一个临时 probe 文件。
-
-4. 尝试触发 `Notification`：
-   - 让 Claude Code 执行一个需要用户批准的动作。
-   - 如果无法稳定触发，记录为未确认。
-
-5. 触发 `Stop`：
-   - 完成一次普通会话 turn。
-
-验收：
-
-- 每类 hook 至少有一条脱敏结构记录，或明确标记为未触发。
-- 能回答：Claude Code adapter 能否按 SuperNoNo protocol 映射。
-
----
-
-### T2.1.4 输出 probe 结论文档
-
-建议新增：
-
-```text
-docs/claude-code/claude-code-hooks-probe-result.md
-```
-
-内容必须包含：
-
-- 测试环境：Windows 版本、Node 版本、Claude Code 版本。
-- 每类 hook 是否触发。
-- 每类 payload 的脱敏字段结构。
-- `session_id` 是否稳定可用。
-- `tool_name` 取值表。
-- Node 执行环境结论。
-- 失败是否影响 Claude Code。
-- 是否可以进入 Phase 2.2 adapter MVP。
-
----
-
-## 6. Phase 2.2 Adapter MVP 预案
-
-只有 T2.1 probe 完成后再做。
+### T2.2.1 实现 Claude Code adapter 文件结构
 
 建议目录：
 
@@ -236,56 +190,140 @@ docs/claude-code/claude-code-hooks-probe-result.md
 adapters/claude-code/
   README.md
   hooks-settings.example.json
+  send-signal.js
   lib.js
   pre-tool-use.js
   post-tool-use.js
-  notification.js
   stop.js
+  manual-fixture-test.js
 ```
 
-初版映射：
+暂不需要 `notification.js`，除非它只作为 no-op 说明文件。
 
-| Claude Code hook | 条件 | SuperNoNo signal |
-|---|---|---|
-| `PreToolUse` | Bash / shell | `command_running` |
-| `PreToolUse` | Read / Grep / Glob / WebFetch | `file_reading` |
-| `PreToolUse` | Edit / Write / NotebookEdit | `file_editing` |
-| `PostToolUse` | success | `step_done` |
-| `PostToolUse` | failure | `error` |
-| `Notification` | permission / waiting input | `permission_required` |
-| `Stop` | turn ended | `turn_ended` |
-| `SessionStart` | optional | `task_start` |
+要求：
 
-统一 envelope：
-
-```json
-{
-  "type": "command_running",
-  "agent": "claude-code",
-  "adapter": "claude-code-hooks",
-  "sessionId": "<session_id>",
-  "taskId": "<tool_use_id or null>",
-  "payload": {
-    "command": "<short redacted summary>",
-    "isTest": false,
-    "action": "正在运行命令"
-  }
-}
-```
-
-MVP 验收：
-
-- 真实 Claude Code shell 调用能让 SuperNoNo 显示 `command_running`。
-- 工具结束能产生 `step_done`。
-- 权限请求能产生 `permission_required`，如 Claude Code hook 支持。
-- SuperNoNo 未运行时 Claude Code 无感知失败。
-- 不读取、不保存 prompt / transcript / source / diff / secret。
+- `send-signal.js` vendored 自 `codex-task-pet/adapters/shared/send-signal.js`，不要跨仓库 require。
+- `lib.js` 做：
+  - 读 stdin JSON。
+  - 提取 `session_id`，fallback 到 `CLAUDE_CODE_SESSION_ID`。
+  - 命令脱敏和截断。
+  - 文件路径只取 basename。
+  - tool 分类。
+  - 发送统一 envelope。
+- 所有 hook 入口：
+  - 零 stdout。
+  - 永远 exit 0。
+  - SuperNoNo 未运行时静默失败。
+  - 不读取 transcript。
+  - 不发送 prompt/source/diff/content/output/token/secret。
 
 ---
 
-## 7. 本地开发流程
+### T2.2.2 实现事件映射
 
-### 7.1 拉取两个仓库
+| Claude Code hook | 条件 | SuperNoNo signal |
+| --- | --- | --- |
+| `PreToolUse` | `tool_name === Bash` | `command_running` |
+| `PreToolUse` | `tool_name in Read/Grep/Glob/WebFetch/WebSearch` | `file_reading` |
+| `PreToolUse` | `tool_name in Write/Edit/MultiEdit/NotebookEdit` | `file_editing` |
+| `PreToolUse` | 其他工具 | `command_running` with generic action |
+| `PostToolUse` | any observed tool | `step_done` |
+| `Stop` | turn ended | `turn_ended` |
+
+`PostToolUse` 不要读 stdout/stderr/content，只看必要小字段。第一版即使工具失败，也先不发 `error`。
+
+---
+
+### T2.2.3 提供安装片段和验证说明
+
+新增：
+
+```text
+adapters/claude-code/hooks-settings.example.json
+adapters/claude-code/README.md
+```
+
+README 必须写清楚：
+
+- 如何把 hooks 片段放进项目级 `.claude/settings.json`。
+- 改 settings 后必须开新 Claude Code 会话。
+- 如何启动 SuperNoNo：`npm.cmd start`。
+- 如何触发验证：
+  - `echo supernono-claude-adapter-test`
+  - 读取 README
+  - 写 scratch 文件
+  - 正常结束一轮
+- SuperNoNo 未启动时应无报错。
+- `Notification / permission_required / error` 是后续任务。
+
+---
+
+### T2.2.4 验证
+
+必须跑：
+
+```powershell
+node --check adapters/claude-code/send-signal.js
+node --check adapters/claude-code/lib.js
+node --check adapters/claude-code/pre-tool-use.js
+node --check adapters/claude-code/post-tool-use.js
+node --check adapters/claude-code/stop.js
+node adapters/claude-code/manual-fixture-test.js
+```
+
+如果同时验证真实桌宠：
+
+```powershell
+cd C:\Users\1\Desktop\project\codex-task-pet
+npm.cmd start
+```
+
+然后在 Claude Code 里触发 Bash / Read / Write / Stop。
+
+验收：
+
+- Bash 触发 `command_running`。
+- Read 触发 `file_reading`。
+- Write/Edit 触发 `file_editing`。
+- PostToolUse 触发 `step_done`。
+- Stop 触发 `turn_ended`。
+- SuperNoNo 面板出现 `agent: claude-code` 的卡片。
+- payload 中不出现 prompt/source/diff/content/output/token/secret 明文。
+
+---
+
+## 7. 后续补测任务
+
+这些不阻塞 Phase 2.2.0，但要留在 backlog：
+
+### T2.3 Notification / permission 补测
+
+目标：构造一个确定会触发 Claude Code `Notification` hook 的场景，确认是否能稳定区分：
+
+- 权限等待
+- 空闲等待
+- 普通提示
+
+只有确认后再做：
+
+- `Notification` -> `permission_required`
+- `permission_resolved` 合成
+
+### T2.4 失败态补测
+
+目标：构造一个会产生 `PostToolUse` 且带明确失败字段的工具调用。
+
+只有观察到可靠小字段后再做：
+
+- `PostToolUse` -> `error`
+
+不要从 stdout/stderr 正文推断失败。
+
+---
+
+## 8. 本地开发流程
+
+### 8.1 拉取两个仓库
 
 ```powershell
 git clone https://github.com/JunweiHu0/codex-task-pet.git
@@ -304,7 +342,7 @@ cd C:\path\to\multiagent-work-assistant
 git pull
 ```
 
-### 7.2 启动桌宠显示层
+### 8.2 启动桌宠显示层
 
 ```powershell
 cd C:\path\to\codex-task-pet
@@ -312,7 +350,7 @@ npm.cmd install
 npm.cmd start
 ```
 
-### 7.3 验证 pet-side multiagent core
+### 8.3 验证 pet-side multiagent core
 
 另开终端：
 
@@ -321,42 +359,37 @@ cd C:\path\to\codex-task-pet
 node adapters/shared/manual-multiagent-test.js
 ```
 
-预期：
-
-- 桌宠根据 focused agent 切状态。
-- 面板能看到多个 agent card / timeline。
-- `permission_required` 能抢占普通工作状态。
-
 ---
 
-## 8. 文档与 Git 约定
+## 9. 文档与 Git 约定
 
-### 8.1 `codex-task-pet`
+### 9.1 `codex-task-pet`
 
 - `main`：桌宠 v1.0 稳定线。
 - `v2/multiagent-work-assistant`：pet-side multiagent 展示实验。
 - 不在这里继续承载 multiagent 核心逻辑。
 
-### 8.2 `multiagent-work-assistant`
+### 9.2 `multiagent-work-assistant`
 
 - `main`：multiagent 主线。
 - 本仓库先以文档 + probe + adapter 脚本为主。
 - adapter 能稳定后，再考虑 orchestrator / event log / dashboard。
 
-### 8.3 提交粒度
+### 9.3 提交粒度
 
 推荐提交顺序：
 
 ```text
-1. Add Claude Code hooks probe plan
-2. Add Claude Code hook probe script
-3. Record Claude Code hook probe results
-4. Add Claude Code adapter MVP
+1. Add Claude Code adapter MVP
+2. Document Claude Code adapter install flow
+3. Verify Claude Code adapter with SuperNoNo
+4. Add Notification permission probe result
+5. Add Claude Code permission mapping
 ```
 
 ---
 
-## 9. 给后续 CC / Codex 的启动提示词
+## 10. 给后续 CC / Codex 的启动提示词
 
 可以直接复制给后续 coding agent：
 
@@ -372,42 +405,57 @@ node adapters/shared/manual-multiagent-test.js
 2. multiagent-work-assistant
 - 负责 multiagent 核心、Claude Code adapter、协议和后续工作助理逻辑。
 
-请先阅读 multiagent-work-assistant/docs/planning/next-task-plan.md。
-然后开始 Phase 2.1：Claude Code hooks probe。
-
-本轮只做 probe，不做正式 adapter。
-请新增/完善：
+请先阅读：
+- docs/planning/next-task-plan.md
 - docs/claude-code/claude-code-hooks-probe-plan.md
 - docs/claude-code/claude-code-adapter-mapping.md
-- probes/claude-code/hook-probe.js
-- probes/claude-code/hook-settings.example.json
+
+当前状态：Phase 2.1 真实 Claude Code hooks probe 主体完成。Bash / Read / Write / Stop 已有真实 payload 依据；Notification 和失败态仍未确认。
+
+现在开始 Phase 2.2.0：Claude Code adapter MVP。
+
+本轮只实现：
+- PreToolUse:Bash -> command_running
+- PreToolUse:Read/Grep/Glob/WebFetch/WebSearch -> file_reading
+- PreToolUse:Write/Edit/MultiEdit/NotebookEdit -> file_editing
+- PostToolUse -> step_done
+- Stop -> turn_ended
+
+暂时不要实现：
+- Notification -> permission_required
+- permission_resolved 合成
+- PostToolUse -> error
 
 限制：
 - 不改 codex-task-pet UI。
 - 不改 Live2D。
 - 不改 stateEngine。
 - 不改 Codex plugin hooks。
-- 不读取/保存 prompt、源码正文、diff、transcript、token、secret。
-- 只记录 hook payload 的字段名和类型结构。
+- 不读取/保存/发送 prompt、源码正文、diff、transcript、tool output、token、secret。
+- 所有 hook 脚本零 stdout、永远 exit 0、SuperNoNo 未运行时静默失败。
 
 完成后汇报：
 - 新增/修改文件
-- probe 如何安装到 Claude Code settings
-- 需要用户手动触发哪些动作
-- 已确认与未确认的 hook 行为
-- 是否可以进入 Phase 2.2 Claude Code adapter MVP
+- adapter 如何安装到 Claude Code settings
+- manual fixture test 如何跑
+- 真实 Claude Code 如何触发验证
+- 哪些事件已能驱动 SuperNoNo
+- 哪些仍留给 Notification/失败态补测
 ```
 
 ---
 
-## 10. 成功标准
+## 11. 成功标准
 
-Phase 2.1 成功的标志不是“adapter 写完”，而是：
+Phase 2.2.0 成功标志：
 
-- 我们知道 Claude Code hook 的真实字段结构。
-- 我们知道 Windows 下 node 执行是否可靠。
-- 我们知道哪些 hook 能稳定触发。
-- 我们能判断 Claude Code adapter MVP 是否可做。
-- 所有观察都没有泄露 prompt / source / diff / secret。
+- 真实 Claude Code Bash 调用能让 SuperNoNo 显示 `command_running`。
+- 文件读取能显示 `file_reading`。
+- 文件写入/编辑能显示 `file_editing`。
+- 工具结束能显示 `step_done`。
+- 回合结束能发送 `turn_ended`。
+- `agent: claude-code` 和 `sessionId` 正确进入 pet-side agentStore。
+- SuperNoNo 未运行时 Claude Code 无报错、无明显延迟。
+- 不泄漏 prompt/source/diff/content/output/secret。
 
-完成这些，再进入 Phase 2.2。
+完成这些，再考虑 Notification 权限链路和失败态。
