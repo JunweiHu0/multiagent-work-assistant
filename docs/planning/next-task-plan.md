@@ -3,22 +3,31 @@
 - 日期：2026-07-06
 - 主仓库：`multiagent-work-assistant`
 - 关联显示层仓库：`codex-task-pet`
-- 当前阶段：Phase 2.1 真实 Claude Code hooks probe 主体完成，准备进入 Phase 2.2.0 Claude Code adapter MVP
+- 当前阶段：Phase 2.2.0 adapter MVP 已完成并通过真实测试，当前进行 **Phase 2.3 双 agent 并发验收**
 - 本文目的：在上下文 compact 或换电脑后，继续按本文推进，不依赖聊天历史。
 
 ---
 
 ## 0. Compact 后先看这里
 
-当前最新可靠进展：
+当前最新可靠进展（2026-07-06 晚更新）：
 
-- `multiagent-work-assistant` 的 `main` 已提交到：`ec6680a Complete Claude Code hooks probe analysis`。
-- Phase 2.1 已完成主体：真实 Claude Code 桌面版 hook probe 已覆盖 `SessionStart` / `PreToolUse` / `PostToolUse` / `Stop`。
-- 真实记录覆盖了 `Bash` / `Read` / `Write`，共 13 条真实 hook 记录。
-- `Notification` 没有观测到；失败态也没有可靠 `exit_code` / `is_error` 字段。
-- 因此下一步不要做完整权限/错误链路，先做 **Phase 2.2.0：Claude Code adapter MVP**。
-- MVP 范围只做：`Bash -> command_running`、`Read -> file_reading`、`Write/Edit -> file_editing`、`PostToolUse -> step_done`、`Stop -> turn_ended`。
-- 暂缓：`Notification -> permission_required`、通用 `error`、`permission_resolved` 合成。
+- `multiagent-work-assistant` 的 `main` 已提交到：`9859124 Add Claude Code adapter MVP`。
+- ✅ Phase 2.1 probe 完成（结论在 `docs/claude-code/claude-code-hooks-probe-plan.md` §7）：
+  真实记录覆盖 `SessionStart` / `PreToolUse`(Bash/Read/Write) / `PostToolUse` / `Stop`；
+  `Notification` 未观测到；失败态无可靠结构化字段。
+- ✅ **Phase 2.2.0 Claude Code adapter MVP 完成并通过真实测试**（`adapters/claude-code/`）：
+  fixture 24/24（含泄漏自检、无桥接 <50ms 静默退出）、真实桌宠端到端投递通过。
+  范围 = `Bash -> command_running`、`Read/Grep/Glob/WebFetch/WebSearch -> file_reading`、
+  `Write/Edit/MultiEdit/NotebookEdit -> file_editing`、`PostToolUse -> step_done`、`Stop -> turn_ended`。
+- 🔄 **Phase 2.3 当前目标**：真实 Codex + Claude Code 双 agent 并发验收。
+  验收文档 `docs/acceptance/phase-2-3-dual-agent-acceptance.md` + 仿真脚本
+  `adapters/shared/manual-realistic-dual-agent-test.js` 已就绪；仿真层已通过
+  （pet 端断言 19/19、真实桌宠投递 7/7、旧 manual-multiagent-test 9/9 不受影响、
+  未发现 pet 端 multiagent bug）；**真实层人工并发测试待执行**（验收文档 §3）。
+- ⛔ 仍明确不在本阶段：`Notification -> permission_required`（桌面版实测未触发该
+  hook，待新证据）、`permission_resolved` 合成、`PostToolUse -> error`、`testPass`
+  能量规则。
 
 当前工作树注意事项：
 
@@ -142,197 +151,157 @@ Claude Code probe 交付：
 
 ---
 
-## 5. 下一阶段总目标
+## 5. 当前阶段总目标
 
-下一阶段是 **Phase 2.2.0：Claude Code adapter MVP**。
+当前阶段是 **Phase 2.3：真实 Codex + Claude Code 双 agent 并发验收**。
 
-目标不是一次做完完整 Claude Code adapter，而是先完成一个可真实驱动 SuperNoNo 的安全最小版：
+Phase 2.2.0 Claude Code adapter MVP 已完成并通过真实测试；Phase 2.3 的仿真层也已完成。接下来不要再重做 adapter，重点是完成真实层人工验收：让真实 Codex Desktop 和真实 Claude Code 同时向 SuperNoNo 发事件，确认 pet-side multiagent core 在真实并发下仍能正确处理事件归属、attention 切换、timeline 展示和状态恢复。
 
-- `PreToolUse:Bash` -> `command_running`
-- `PreToolUse:Read` -> `file_reading`
-- `PreToolUse:Write/Edit/MultiEdit` -> `file_editing`
-- `PostToolUse` -> `step_done`
-- `Stop` -> `turn_ended`
+本阶段完成标准：
 
-暂缓：
-
-- `Notification` -> `permission_required`
-- `permission_resolved` 合成
-- `PostToolUse` -> `error`
+- Codex 真实任务能通过 `codex-plugin-hooks` 进入桌宠。
+- Claude Code 真实会话能通过 `claude-code-hooks` 进入桌宠。
+- 面板能同时出现 codex 与 claude-code 两个 agent/session。
+- 两边交替工作时，focus 按 attention policy v0 切换。
+- 任一方先结束时，不清掉另一方仍在工作的状态。
+- 两边都结束后，桌宠安静回 idle。
 
 ---
 
-## 6. Phase 2.2.0 任务拆分
+## 6. Phase 2.3 执行清单
 
-### T2.2.0 确认 adapter MVP 边界
+### T2.3.1 提交仿真层交付物
 
-先阅读：
+本轮已新增/更新：
 
 ```text
-docs/claude-code/claude-code-hooks-probe-plan.md
-docs/claude-code/claude-code-adapter-mapping.md
-docs/architecture/signal-protocol-v0.2-plan.md
+docs/acceptance/phase-2-3-dual-agent-acceptance.md
+adapters/shared/manual-realistic-dual-agent-test.js
+docs/planning/next-task-plan.md
 ```
 
-确认本轮只实现已被 probe 支撑的映射：Bash / Read / Write-Edit / PostToolUse step_done / Stop turn_ended。
+提交前注意：
 
-验收：
+- 不要提交 `probe-authcheck.txt`。
+- 不要提交 `scratch-probe.txt`。
+- 不要提交 `.claude/` 或 probe runtime 日志。
 
-- 文档或 README 明确说明 `permission_required` 和 `error` 暂缓。
+建议提交命令：
 
----
-
-### T2.2.1 实现 Claude Code adapter 文件结构
-
-建议目录：
-
-```text
-adapters/claude-code/
-  README.md
-  hooks-settings.example.json
-  send-signal.js
-  lib.js
-  pre-tool-use.js
-  post-tool-use.js
-  stop.js
-  manual-fixture-test.js
+```cmd
+cd C:\Users\1\Desktop\project\multiagent-work-assistant
+git add docs/acceptance/phase-2-3-dual-agent-acceptance.md adapters/shared/manual-realistic-dual-agent-test.js docs/planning/next-task-plan.md
+git commit -m "Add dual-agent acceptance plan"
+git push
 ```
 
-暂不需要 `notification.js`，除非它只作为 no-op 说明文件。
+### T2.3.2 跑仿真层脚本
 
-要求：
+先启动桌宠：
 
-- `send-signal.js` vendored 自 `codex-task-pet/adapters/shared/send-signal.js`，不要跨仓库 require。
-- `lib.js` 做：
-  - 读 stdin JSON。
-  - 提取 `session_id`，fallback 到 `CLAUDE_CODE_SESSION_ID`。
-  - 命令脱敏和截断。
-  - 文件路径只取 basename。
-  - tool 分类。
-  - 发送统一 envelope。
-- 所有 hook 入口：
-  - 零 stdout。
-  - 永远 exit 0。
-  - SuperNoNo 未运行时静默失败。
-  - 不读取 transcript。
-  - 不发送 prompt/source/diff/content/output/token/secret。
-
----
-
-### T2.2.2 实现事件映射
-
-| Claude Code hook | 条件 | SuperNoNo signal |
-| --- | --- | --- |
-| `PreToolUse` | `tool_name === Bash` | `command_running` |
-| `PreToolUse` | `tool_name in Read/Grep/Glob/WebFetch/WebSearch` | `file_reading` |
-| `PreToolUse` | `tool_name in Write/Edit/MultiEdit/NotebookEdit` | `file_editing` |
-| `PreToolUse` | 其他工具 | `command_running` with generic action |
-| `PostToolUse` | any observed tool | `step_done` |
-| `Stop` | turn ended | `turn_ended` |
-
-`PostToolUse` 不要读 stdout/stderr/content，只看必要小字段。第一版即使工具失败，也先不发 `error`。
-
----
-
-### T2.2.3 提供安装片段和验证说明
-
-新增：
-
-```text
-adapters/claude-code/hooks-settings.example.json
-adapters/claude-code/README.md
-```
-
-README 必须写清楚：
-
-- 如何把 hooks 片段放进项目级 `.claude/settings.json`。
-- 改 settings 后必须开新 Claude Code 会话。
-- 如何启动 SuperNoNo：`npm.cmd start`。
-- 如何触发验证：
-  - `echo supernono-claude-adapter-test`
-  - 读取 README
-  - 写 scratch 文件
-  - 正常结束一轮
-- SuperNoNo 未启动时应无报错。
-- `Notification / permission_required / error` 是后续任务。
-
----
-
-### T2.2.4 验证
-
-必须跑：
-
-```powershell
-node --check adapters/claude-code/send-signal.js
-node --check adapters/claude-code/lib.js
-node --check adapters/claude-code/pre-tool-use.js
-node --check adapters/claude-code/post-tool-use.js
-node --check adapters/claude-code/stop.js
-node adapters/claude-code/manual-fixture-test.js
-```
-
-如果同时验证真实桌宠：
-
-```powershell
+```cmd
 cd C:\Users\1\Desktop\project\codex-task-pet
 npm.cmd start
 ```
 
-然后在 Claude Code 里触发 Bash / Read / Write / Stop。
+另开终端运行：
 
-验收：
+```cmd
+cd C:\Users\1\Desktop\project\multiagent-work-assistant
+node adapters\shared\manual-realistic-dual-agent-test.js
+```
 
-- Bash 触发 `command_running`。
-- Read 触发 `file_reading`。
-- Write/Edit 触发 `file_editing`。
-- PostToolUse 触发 `step_done`。
-- Stop 触发 `turn_ended`。
-- SuperNoNo 面板出现 `agent: claude-code` 的卡片。
-- payload 中不出现 prompt/source/diff/content/output/token/secret 明文。
+预期：
+
+- 脚本 `7/7 delivered`。
+- 托盘任务面板出现 codex 和 claude-code 两张卡片。
+- `SuperNoNo.getAgents()` 有 `codex:codex-s1` 与 `claude-code:claude-s1`。
+- `SuperNoNo.getTimeline()` 有 7 条交错事件。
+
+### T2.3.3 跑真实层人工并发验收
+
+按 [Phase 2.3 验收文档](../acceptance/phase-2-3-dual-agent-acceptance.md) 第 3 节执行：
+
+1. 启动 `codex-task-pet` 桌宠。
+2. 确认 Codex plugin hooks 已安装并 trust。
+3. 确认 Claude Code hooks 已安装到测试项目的 `.claude/settings.json`，并开新会话。
+4. 在 Codex Desktop 里触发真实 shell 命令，例如 `echo codex-live-test`。
+5. 在 Claude Code 里触发真实 shell 命令，例如 `echo cc-live-test`，再读/写一个安全 scratch 文件。
+6. 观察面板里两个 agent 的状态、focus、timeline。
+
+真实层通过后，在验收文档第 6 节或后续记录里补一句实际结果，包括：
+
+- 是否出现两个 agent 卡片。
+- focus 切换是否符合预期。
+- 是否发现 pet-side multiagent bug。
+- 是否有安装/信任/路径类问题。
 
 ---
 
-## 7. 后续补测任务
+## 7. Phase 2.4 候选：Multiagent Panel 产品化
 
-这些不阻塞 Phase 2.2.0，但要留在 backlog：
+Phase 2.3 真实层通过后，再进入 **Phase 2.4：Multiagent Panel 产品化**。
 
-### T2.3 Notification / permission 补测
+目标不是改小窗，也不是继续打磨 Live2D，而是让托盘任务面板真正适合作为“个人工作助理控制台”：
 
-目标：构造一个确定会触发 Claude Code `Notification` hook 的场景，确认是否能稳定区分：
+- agent 卡片更清楚地区分 `codex` / `claude-code`。
+- 每张卡显示当前状态、最近动作、sessionId 简写、最后活跃时间。
+- 支持点击 agent 卡片切换 focus。
+- 支持 pin 某个 agent，避免 attention policy 自动抢焦。
+- timeline 支持按 agent 过滤。
+- 增加 staleness 提醒：某 agent 长时间没有进展时标记“可能卡住”。
+- 保持 Nono 主体小窗小巧，不做大窗口回退。
 
-- 权限等待
-- 空闲等待
-- 普通提示
+Phase 2.4 开始前，应先把 Phase 2.3 真实层体感记录下来，因为 panel 设计要基于真实并发时的痛点，而不是凭空设计。
 
-只有确认后再做：
+---
 
-- `Notification` -> `permission_required`
+## 8. 后续 Backlog
+
+这些任务暂不阻塞 Phase 2.3 / 2.4：
+
+### Notification / Permission 补测
+
+当前桌面版 Claude Code probe 未观察到 `Notification` hook，因此暂不实现：
+
+- `Notification -> permission_required`
 - `permission_resolved` 合成
 
-### T2.4 失败态补测
+只有在新的真实 payload 证明它稳定可用后再做。
 
-目标：构造一个会产生 `PostToolUse` 且带明确失败字段的工具调用。
+### Error / TestPass 补测
 
-只有观察到可靠小字段后再做：
+当前 `PostToolUse` 未观察到可靠的结构化失败字段，且不能读取 stdout/stderr 正文推断结果。因此暂不实现：
 
-- `PostToolUse` -> `error`
+- `PostToolUse -> error`
+- 测试成功时的 `testPass` 能量规则
 
-不要从 stdout/stderr 正文推断失败。
+后续只允许基于安全的小字段判断，不允许把 tool output、源码、diff、prompt、transcript 发进 signal 或日志。
+
+### 安装与健康检查产品化
+
+后续可以考虑：
+
+- Claude Code adapter 安装脚本。
+- Codex plugin hooks 安装/刷新脚本。
+- 检查 `127.0.0.1:4174` 桥是否可用。
+- 检查 Node 是否可被 hook 环境找到。
+- 生成 adapter health report。
 
 ---
 
-## 8. 本地开发流程
+## 9. 本地开发流程
 
-### 8.1 拉取两个仓库
+### 9.1 拉取两个仓库
 
-```powershell
+```cmd
 git clone https://github.com/JunweiHu0/codex-task-pet.git
 git clone https://github.com/JunweiHu0/multiagent-work-assistant.git
 ```
 
 如果已经 clone：
 
-```powershell
+```cmd
 cd C:\path\to\codex-task-pet
 git fetch origin
 git switch v2/multiagent-work-assistant
@@ -342,54 +311,58 @@ cd C:\path\to\multiagent-work-assistant
 git pull
 ```
 
-### 8.2 启动桌宠显示层
+### 9.2 启动桌宠显示层
 
-```powershell
+```cmd
 cd C:\path\to\codex-task-pet
 npm.cmd install
 npm.cmd start
 ```
 
-### 8.3 验证 pet-side multiagent core
+### 9.3 验证 pet-side multiagent core
 
-另开终端：
+```cmd
+cd C:\path\to\multiagent-work-assistant
+node adapters\shared\manual-realistic-dual-agent-test.js
+```
 
-```powershell
+也可以在 `codex-task-pet` 仓库跑旧脚本，确认单仓库手动测试未回归：
+
+```cmd
 cd C:\path\to\codex-task-pet
-node adapters/shared/manual-multiagent-test.js
+node adapters\shared\manual-multiagent-test.js
 ```
 
 ---
 
-## 9. 文档与 Git 约定
+## 10. Git 约定
 
-### 9.1 `codex-task-pet`
+### `codex-task-pet`
 
 - `main`：桌宠 v1.0 稳定线。
-- `v2/multiagent-work-assistant`：pet-side multiagent 展示实验。
-- 不在这里继续承载 multiagent 核心逻辑。
+- `v2/multiagent-work-assistant`：pet-side multiagent 显示实验。
+- 不在这里承载 multiagent 核心逻辑。
 
-### 9.2 `multiagent-work-assistant`
+### `multiagent-work-assistant`
 
 - `main`：multiagent 主线。
-- 本仓库先以文档 + probe + adapter 脚本为主。
-- adapter 能稳定后，再考虑 orchestrator / event log / dashboard。
+- 当前仓库承载 docs、probe、adapter、验收脚本与未来 orchestrator。
 
-### 9.3 提交粒度
+### 提交粒度
 
-推荐提交顺序：
+推荐阶段提交：
 
 ```text
 1. Add Claude Code adapter MVP
-2. Document Claude Code adapter install flow
-3. Verify Claude Code adapter with SuperNoNo
-4. Add Notification permission probe result
-5. Add Claude Code permission mapping
+2. Add dual-agent acceptance plan
+3. Record real dual-agent acceptance result
+4. Improve multiagent panel
+5. Add adapter health check
 ```
 
 ---
 
-## 10. 给后续 CC / Codex 的启动提示词
+## 11. 给后续 CC / Codex 的启动提示词
 
 可以直接复制给后续 coding agent：
 
@@ -403,59 +376,51 @@ node adapters/shared/manual-multiagent-test.js
 - pet-side multiagent core 在 v2/multiagent-work-assistant 分支。
 
 2. multiagent-work-assistant
-- 负责 multiagent 核心、Claude Code adapter、协议和后续工作助理逻辑。
+- 负责 multiagent 核心、Claude Code adapter、验收文档和后续工作助理逻辑。
 
 请先阅读：
 - docs/planning/next-task-plan.md
-- docs/claude-code/claude-code-hooks-probe-plan.md
+- docs/acceptance/phase-2-3-dual-agent-acceptance.md
+- adapters/claude-code/README.md
 - docs/claude-code/claude-code-adapter-mapping.md
+- C:\Users\1\Desktop\project\codex-task-pet\docs\supernono-signal-protocol.md
 
-当前状态：Phase 2.1 真实 Claude Code hooks probe 主体完成。Bash / Read / Write / Stop 已有真实 payload 依据；Notification 和失败态仍未确认。
+当前状态：
+- Phase 2.1 Claude Code hooks probe 已完成。
+- Phase 2.2.0 Claude Code adapter MVP 已完成并通过真实测试。
+- Phase 2.3 仿真层已完成：manual-realistic-dual-agent-test.js 可以模拟 codex + claude-code 双 agent。
+- 下一步是完成 Phase 2.3 真实层人工并发验收：真实 Codex Desktop + 真实 Claude Code 同时驱动桌宠。
 
-现在开始 Phase 2.2.0：Claude Code adapter MVP。
+请不要重做 Claude Code adapter MVP。
+请不要实现 Notification/permission_required/error/testPass。
+请不要改 Live2D、小窗 UI、stateEngine、Codex plugin hooks。
 
-本轮只实现：
-- PreToolUse:Bash -> command_running
-- PreToolUse:Read/Grep/Glob/WebFetch/WebSearch -> file_reading
-- PreToolUse:Write/Edit/MultiEdit/NotebookEdit -> file_editing
-- PostToolUse -> step_done
-- Stop -> turn_ended
-
-暂时不要实现：
-- Notification -> permission_required
-- permission_resolved 合成
-- PostToolUse -> error
-
-限制：
-- 不改 codex-task-pet UI。
-- 不改 Live2D。
-- 不改 stateEngine。
-- 不改 Codex plugin hooks。
-- 不读取/保存/发送 prompt、源码正文、diff、transcript、tool output、token、secret。
-- 所有 hook 脚本零 stdout、永远 exit 0、SuperNoNo 未运行时静默失败。
+你要做的是：
+1. 按 docs/acceptance/phase-2-3-dual-agent-acceptance.md 跑真实层验收。
+2. 记录真实 Codex + Claude Code 并发时的表现。
+3. 如果发现 pet-side multiagent bug，只做最小修复并说明复现路径。
+4. 验收通过后，再提出 Phase 2.4 Multiagent Panel 产品化的具体方案。
 
 完成后汇报：
-- 新增/修改文件
-- adapter 如何安装到 Claude Code settings
-- manual fixture test 如何跑
-- 真实 Claude Code 如何触发验证
-- 哪些事件已能驱动 SuperNoNo
-- 哪些仍留给 Notification/失败态补测
+- 实际执行的验收步骤。
+- 观察到的 SuperNoNo.getAgents() / getTimeline() 结果。
+- 是否发现 bug。
+- 是否可以进入 Phase 2.4。
 ```
 
 ---
 
-## 11. 成功标准
+## 12. 当前成功标准
 
-Phase 2.2.0 成功标志：
+Phase 2.3 成功标志：
 
-- 真实 Claude Code Bash 调用能让 SuperNoNo 显示 `command_running`。
-- 文件读取能显示 `file_reading`。
-- 文件写入/编辑能显示 `file_editing`。
-- 工具结束能显示 `step_done`。
-- 回合结束能发送 `turn_ended`。
-- `agent: claude-code` 和 `sessionId` 正确进入 pet-side agentStore。
-- SuperNoNo 未运行时 Claude Code 无报错、无明显延迟。
-- 不泄漏 prompt/source/diff/content/output/secret。
+- 仿真脚本能稳定投递 codex + claude-code 双 agent 事件。
+- 真实 Codex Desktop 能发送 `codex-plugin-hooks` 事件。
+- 真实 Claude Code 能发送 `claude-code-hooks` 事件。
+- agentStore 能按 `agent:sessionId` 正确隔离。
+- timeline 中两个 agent 的事件归属正确。
+- attention policy v0 在真实并发中体感可接受。
+- 任一 agent 的 `turn_ended` 不影响另一个仍在工作的 agent。
+- 全部结束后桌宠回 idle/resting。
 
-完成这些，再考虑 Notification 权限链路和失败态。
+完成这些后，再进入 Phase 2.4。
