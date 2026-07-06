@@ -1,0 +1,27 @@
+{
+  "//": "SuperNoNo Claude Code adapter (Phase 2.2.0). Merge the `hooks` object below into your .claude/settings.json (project-level recommended) or ~/.claude/settings.json. Replace <ADAPTER_DIR> with the absolute path of this directory, e.g. C:\\Users\\you\\multiagent-work-assistant\\adapters\\claude-code (double backslashes inside JSON). Bare `node` is probe-verified to resolve in the hook environment on Windows; if your setup differs, use the absolute node path. Restart the Claude Code session after editing settings.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Grep|Glob|WebFetch|WebSearch|Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          { "type": "command", "command": "node \"<ADAPTER_DIR>\\pre-tool-use.js\"", "timeout": 10 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node \"<ADAPTER_DIR>\\post-tool-use.js\"", "timeout": 10 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node \"<ADAPTER_DIR>\\stop.js\"", "timeout": 10 }
+        ]
+      }
+    ]
+  }
+}
