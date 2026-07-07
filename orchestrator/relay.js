@@ -32,6 +32,7 @@
  */
 const http = require('http');
 const { createEventLog } = require('./event-log');
+const { createWorkStore } = require('./work-store');
 
 const HOST = '127.0.0.1';
 const MAX_BODY = 64 * 1024;        // mirror the pet bridge limit
@@ -44,7 +45,9 @@ function startRelay(options) {
   const listenPort = Number(options.port !== undefined ? options.port : (process.env.SN_BRAIN_PORT || 4175));
   const petPort = Number(options.petPort !== undefined ? options.petPort : (process.env.SN_RELAY_PET_PORT || 4174));
   const log = createEventLog(options.dataDir);
+  const workStore = createWorkStore(options.dataDir);
   const quiet = !!options.quiet;
+  let ingestWarned = false; // warn once, not per event
 
   if (listenPort === petPort) {
     throw new Error(
@@ -172,11 +175,19 @@ function startRelay(options) {
       // Answer the upstream hook NOW — its latency must not depend on the pet.
       json(res, 200, { ok: true, accepted: true });
 
-      // Then forward + log asynchronously (one JSONL line per event).
+      // Then forward + log + bookkeep asynchronously (one JSONL line per event).
       forwardToPet(rawBody).then((forward) => {
         if (forward.status === 'ok') counters.forwarded++;
         else counters.missed++;
         log.append({ at: new Date().toISOString(), envelope, forward });
+        // Work bookkeeping (Phase 3.2): create/update the AgentRun for this
+        // envelope. ingestEvent never throws; a store failure (e.g. corrupted
+        // state file) must never affect forwarding or the upstream hook.
+        const ingest = workStore.ingestEvent(envelope);
+        if (!ingest.ok && !ingestWarned) {
+          ingestWarned = true; // warn once; ingest keeps being retried per event
+          say('work-store ingest failing (forwarding unaffected):', ingest.error);
+        }
       });
     });
 
@@ -192,6 +203,7 @@ function startRelay(options) {
       say(`listening:  http://${HOST}:${listenPort}  (POST /signal, GET /health)`);
       say(`forwarding: http://${HOST}:${petPort}/signal`);
       say(`event log:  ${log.currentFile()}`);
+      say(`work store: ${workStore.filePath}`);
       resolve({
         server,
         port: listenPort,

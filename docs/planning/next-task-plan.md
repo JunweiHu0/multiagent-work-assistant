@@ -39,13 +39,16 @@
   relay-fixture-test.js / README.md）。fixture 22/22；真实端到端：双 agent
   仿真经 `SUPERNONO_BRIDGE_PORT=4175` 投递 7/7、逐字节透明、pet 行为与直连
   一致、JSONL 只含 envelope+forward。实现记录见设计文档 §10。
-- 🔄 **Phase 3.2 当前目标**：手动 WorkItem + 分配 agent。
-  `workbench-state.json` 读写、`work new/add/assign/link/status/decide/done`
-  CLI、AgentRun 从 relay 事件流自动建立（按 `agent:sessionId` 归组）、未关联
-  run 提示。验收：一次真实双 agent 工作被完整记录，`work status` 能如实回答
-  "现在到哪了、谁在等我"（设计文档 §8）。
-- 后续：**Phase 3.3** 从事件流生成用户摘要（`work summary` → Markdown +
-  assistant 身份向 pet 汇报）。
+- ✅ **Phase 3.2 已完成**（2026-07-07）：work store + 手动 CLI 落地，
+  `orchestrator/work-store.js` + `work.js`。四对象数据模型（ws/wi/ar/dr 短 id）、
+  relay 每事件自动归组 AgentRun、未关联 run 提示、损坏文件拒绝覆盖。
+  store fixture 30/30、relay+store 集成 20/20、3.1 relay 回归 22/22、
+  真实目录 CLI 全链路走查通过。实现记录见设计文档 §11。
+- 🔄 **Phase 3.3 当前目标**：从事件流生成用户摘要。`work summary` 读取
+  workbench-state + 当日 JSONL，生成 Markdown（每个 item：状态/关联 run 事件
+  统计/耗时/待决事项），可选以 `agent:"assistant"`、`adapter:"workbench"` 身份
+  向 pet 发 `completed` + artifact 路径。验收（设计文档 §8）：真实半天工作产出
+  一份**你愿意读**的摘要；摘要不含任何敏感正文；桌宠能提示"总结已生成"。
 - ⛔ 仍明确不在本阶段：`Notification -> permission_required`（桌面版实测未触发该
   hook，待新证据）、`permission_resolved` 合成、`PostToolUse -> error`、`testPass`
   能量规则；云端 / 账号 / 数据库 / 自动授权 / 读取 prompt 与 transcript 正文。
@@ -634,3 +637,14 @@ Phase 3 全程约束（设计文档 §2 的铁律摘要）：不做云端/账号
 不读 prompt / transcript / 源码正文 / diff / tool output；不 spawn 或控制 agent；
 pet 仓库预期零提交；协议零变更（`payload.project` 增量候选留到 3.2 用出真实
 痛感再议）。
+
+## 17. Phase 3 MVP closeout (2026-07-07)
+
+Phase 3.3 / 3.4 / 3.5 have been implemented as a local, manual-first MVP:
+
+- `work summary` generates a metadata-only Markdown report from the work store and daily relay JSONL.
+- `work summary --notify` reports completion as `agent:"assistant"`, `adapter:"workbench"` so the pet can announce that a summary was generated.
+- `workflow review-loop` creates the first fixed multiagent workflow: Codex build item -> Claude Code review item -> explicit user decision gate.
+- No automatic task decomposition, no agent spawn, no automatic authorization, no database, no cloud, and no prompt/transcript/source/diff/tool-output reading.
+
+Recommended next action after compact: use the loop on a real feature for several hours, then have CC/Fable review the result. The review question should be: "Does this summary and workflow reduce coordination load enough to justify the next layer of automation?" If the answer is no, improve or cut the summary before adding scheduling.

@@ -212,7 +212,33 @@ Phase 3.1（relay + local store）已实现并验证，交付物在 `orchestrato
 含只读 CLI，实际交付把它并入 3.2 与 WorkItem 一起做，避免先造一个没有数据
 模型消费者的空壳命令）；health-check 与 Phase 2.5 adapter health-check 的整合。
 
-## 11. Phase 3.0 结论
+## 11. Phase 3.2 实现记录（2026-07-07）
+
+Phase 3.2（work store + 手动 CLI）已实现并验证，交付物在 `orchestrator/`：
+
+| 文件 | 内容 |
+| --- | --- |
+| `work-store.js` | 四对象数据模型落地（WorkSession/WorkItem/AgentRun/DecisionRequest，短 id `ws1/wi1/ar1/dr1`）；load→mutate→save 每操作一轮，tmp+rename 原子写；**损坏文件抛明确错误、任何路径都不静默覆盖**；`ingestEvent()` 永不 throw |
+| `work.js` | 手动 CLI：`session start/close`、`item add/assign/link/done`、`decision add/resolve`、`status`（含"未关联 AgentRun"提示） |
+| relay.js（改动） | 每事件转发+落盘后调用 `ingestEvent`（异步路径内，失败只告警一次并逐事件重试，绝不影响转发与上游应答） |
+| `work-store-fixture-test.js` | 30 项断言：生命周期、事件归组与状态流转、双 agent 隔离、done 手动、决策、损坏保护 |
+| `relay-work-integration-test.js` | 20 项断言：relay→store→CLI 端到端（CLI 以真实子进程跑）、记账开启时转发仍透明、store 损坏不破坏转发 |
+
+设计要点（相对 3.0 设计的落地取舍）：
+
+- run 状态由事件类型驱动（working / waiting_user / completed / idle）；已关联
+  item 自动 todo→in_progress、waiting_user↔in_progress，**done 永远手动**。
+- 无 sessionId 事件（notify wrapper 的 turn_ended）不参与记账——无法归属到
+  具体会话，宁缺毋错；转发与 JSONL 日志不受影响。
+- 已知 MVP 限制：relay 与 CLI 双进程对单文件 read-modify-write 存在理论竞态，
+  人类尺度可接受，恶化再收敛为单写者（如 CLI 经 relay HTTP 操作）。
+
+验证结果：`node --check` 全过；store fixture **30/30**、集成测试 **20/20**、
+Phase 3.1 relay fixture 回归 **22/22**；真实目录 CLI 走查
+（session start → item add → assign → 仿真事件经 relay → link → status
+显示"进行中/工作中" → done）全链路通过。3.1 relay 本身未发现需修复的问题。
+
+## 12. Phase 3.0 结论
 
 1. Orchestrator MVP = **记账员 + 中继站 + 发言人**，不是调度器：不 spawn agent、
    不自动分解、不自动授权。
@@ -223,3 +249,32 @@ Phase 3.1（relay + local store）已实现并验证，交付物在 `orchestrato
 4. 数据模型四个对象（WorkSession / WorkItem / AgentRun / DecisionRequest），
    JSON + JSONL 存储，明确的膨胀红线。
 5. 从 3.1 relay 开始做，因为它是唯一需要证伪的架构部件。
+
+## 13. Phase 3.3-3.5 implementation record (2026-07-07)
+
+Phase 3 local MVP is now complete through the first fixed workflow. The orchestrator remains a bookkeeper, relay, and spokesperson; it still does not spawn or control agents.
+
+Delivered files:
+
+| File | Purpose |
+| --- | --- |
+| `orchestrator/summary.js` | Generates metadata-only Markdown summaries from `workbench-state.json` and today's relay JSONL; optionally sends an assistant `completed` signal with the summary artifact path. |
+| `orchestrator/summary-fixture-test.js` | Verifies summary content, forward counts, open decisions, and leak exclusions. |
+| `orchestrator/workflow-fixture-test.js` | Verifies the fixed Codex build -> Claude review -> user decision workflow template and summary command. |
+| `orchestrator/work.js` | Adds `summary` and `workflow review-loop`; CLI output is ASCII to avoid Windows codepage corruption. |
+| `orchestrator/work-store-fixture-test.js` | Adds regression coverage for linking a settled run after it has already gone idle/completed. |
+
+Operational loop:
+
+1. Start relay: `node orchestrator/relay.js`.
+2. Point adapters at relay: `SUPERNONO_BRIDGE_PORT=4175`.
+3. Create work: `node orchestrator/work.js workflow review-loop "<task>" --goal "..."`.
+4. Run Codex and Claude Code manually.
+5. Link observed runs via `work.js item link` and mark done/decisions manually.
+6. Generate summary: `node orchestrator/work.js summary --notify`.
+
+Validation: all `orchestrator/*.js` pass `node --check`; store fixture, relay integration, relay fixture, summary fixture, and workflow fixture all pass.
+
+Security/privacy constraints preserved: summaries only use envelope metadata and user-entered item/decision titles. They do not include prompt, transcript, source, diff, tool output, tokens, or secrets. `--notify` sends only a summary artifact path and a short action string.
+
+Next product step: run this loop on one real task and ask CC/Fable to review whether the summary and workflow are actually useful. Add automation only after the manual loop proves valuable.
