@@ -729,3 +729,279 @@ node orchestrator\work.js summary --notify
 ```
 
 完成后再让 CC/Fable review summary v2 与 prompt generator 的产品价值。
+
+## 21. Phase 4 规划：从手动工作流走向半自动 Brain（待启动）
+
+Phase 3 的结论是：本地 orchestrator MVP 已经具备“记录、归组、生成 prompt、生成 summary、通知桌宠”的能力，但它仍然是手动优先的工作助理。Phase 4 的目标不是立刻变成全自动 agent controller，而是增加一层**可审阅、可拒绝、可回退的半自动 brain**。
+
+### Phase 4 北极星
+
+让 SuperNoNo 从“帮我记录多 agent 工作状态”升级为：
+
+```text
+我给一个工作目标
+-> brain 生成任务拆分与 agent 分工建议
+-> 用户确认
+-> brain 生成给 Codex / Claude Code 的 prompts
+-> 用户手动或半自动投递
+-> brain 跟踪执行、生成总结、提醒决策
+```
+
+Phase 4 的关键词是 **suggest first, execute later**。在没有真实使用数据证明可靠之前，brain 只给建议和草稿，不自动启动 agent、不自动授权、不自动修改仓库。
+
+---
+
+### Phase 4.0：真实使用复盘与产品判断
+
+目标：先评估 Phase 3 手动 MVP 是否值得继续自动化。
+
+输入：
+
+- `docs/acceptance/phase-3-6-real-use.md`
+- `.supernono/summaries/*.md` 中用户愿意提供的 summary
+- 用户对 prompt generator / summary v2 / review-loop 的体感反馈
+- CC / Fable 的 review 结果
+
+交付：
+
+- `docs/planning/phase-4-brain-plan.md`
+- 明确回答：
+  - 哪些手动步骤最烦，值得自动化？
+  - 哪些 summary 内容有用？哪些是噪音？
+  - prompt generator 是否真的减少提示词成本？
+  - Phase 4 是否应该引入 Python brain？如果引入，边界是什么？
+
+验收标准：
+
+- 不写代码也可以完成。
+- 产出一个明确的 Phase 4 实施范围。
+- 明确砍掉不值得做的功能。
+
+---
+
+### Phase 4.1：Planner Draft（任务拆分草稿，不执行）
+
+目标：新增一个 planner draft 能力，把用户输入的目标转换成可审阅的 WorkItems 草稿。
+
+建议命令：
+
+```cmd
+node orchestrator\work.js plan draft "实现某个功能" --mode review-loop
+```
+
+输出：
+
+- 建议的 WorkSession title / goal
+- 建议的 WorkItems
+- 每个 WorkItem 的 role / assignedAgent
+- 建议的 decision gates
+- 风险/假设列表
+
+关键边界：
+
+- 只生成草稿，不写入 `workbench-state.json`，除非用户显式 `plan accept`。
+- 不调用 LLM API；第一版可以是规则模板。
+- 不读取源码正文、prompt、transcript、tool output。
+
+可能的数据文件：
+
+```text
+.supernono/plans/plan-YYYYMMDD-HHMMSS.json
+.supernono/plans/plan-YYYYMMDD-HHMMSS.md
+```
+
+验收标准：
+
+- 给定一个目标，能生成一份用户愿意修改/接受的计划草稿。
+- 草稿可以被 `plan accept` 转成现有 WorkSession / WorkItem / DecisionRequest。
+
+---
+
+### Phase 4.2：Plan Accept（从草稿创建 WorkSession）
+
+目标：用户确认计划后，把草稿写入 work store。
+
+建议命令：
+
+```cmd
+node orchestrator\work.js plan accept .supernono\plans\plan-xxx.json
+```
+
+行为：
+
+- 创建 WorkSession。
+- 创建 WorkItems。
+- 分配 suggested agent。
+- 创建 DecisionRequests。
+- 输出下一步 prompt 命令。
+
+边界：
+
+- 用户必须显式 accept。
+- 不自动启动 Codex / Claude Code。
+- 不自动 link run。
+
+验收标准：
+
+- `plan draft -> plan accept -> work status -> prompt review-loop` 链路可用。
+- 生成的 state 和手动 `workflow review-loop` 创建的 state 兼容。
+
+---
+
+### Phase 4.3：Prompt Pack（多 agent 指令包）
+
+目标：从 WorkSession 一次性生成完整 agent prompt 包，而不是逐 item 生成。
+
+建议命令：
+
+```cmd
+node orchestrator\work.js prompt pack ws3
+```
+
+输出：
+
+```text
+.supernono/prompts/ws3/codex-wi1.md
+.supernono/prompts/ws3/claude-wi2.md
+.supernono/prompts/ws3/user-checklist.md
+```
+
+内容：
+
+- 给 Codex 的实现 prompt。
+- 给 Claude Code 的 review prompt。
+- 给用户的执行 checklist。
+- link / decision / summary 的后续命令。
+
+验收标准：
+
+- 用户可以直接复制 prompt 包完成一轮工作。
+- prompt 不包含敏感正文。
+- checklist 不要求用户记命令。
+
+---
+
+### Phase 4.4：Assistant Decision Brief（决策摘要）
+
+目标：当有 open DecisionRequest 时，生成一份更像“请你拍板”的摘要，而不是普通 summary。
+
+建议命令：
+
+```cmd
+node orchestrator\work.js decision brief dr2 --notify
+```
+
+输出内容：
+
+- 需要用户决定什么。
+- 相关 WorkItem / AgentRun。
+- 当前已知状态。
+- 可选决策：accept / reject / note。
+- 推荐下一步命令。
+
+边界：
+
+- 不替用户决定。
+- 不自动 resolve。
+- 只基于 metadata 和用户手动输入，不读 agent 正文输出。
+
+验收标准：
+
+- 用户看到 brief 后能更快决定 `accept/reject/note`。
+- 桌宠通知是有意义的“需要你拍板”，不是泛泛的完成提醒。
+
+---
+
+### Phase 4.5：Python Brain 可行性 Spike
+
+目标：验证是否需要引入 Python，而不是盲目重写。
+
+建议结论方向：
+
+```text
+Node.js 继续负责：hooks / relay / local CLI / Electron pet 接线
+Python 只负责：planner / evaluator / memory / RAG / heavier orchestration
+```
+
+Spike 内容：
+
+- 新增 `brain-python/` 或 `planner-python/` 实验目录。
+- 定义 Node <-> Python 的最小接口，例如 stdin/stdout JSON。
+- Python 输入：WorkSession metadata + user goal。
+- Python 输出：plan draft JSON。
+- 不接真实 LLM API，先用 deterministic planner 验证接口。
+
+验收标准：
+
+- Node CLI 能调用 Python planner 并拿到 plan draft。
+- Python 失败时 Node 不崩溃。
+- 不引入 Python 到 hook 热路径，避免拖慢 agent hooks。
+
+是否进入 Python 的判断标准：
+
+- 如果只是模板化 prompts，继续 Node。
+- 如果开始做复杂规划、记忆、RAG、评估器，再引入 Python。
+- 不做全仓库 Python 重写。
+
+---
+
+### Phase 4.6：真实半自动工作流验收
+
+目标：用 Phase 4.1-4.4 跑一个真实任务。
+
+流程：
+
+```text
+plan draft
+-> 用户编辑/确认
+-> plan accept
+-> prompt pack
+-> Codex / Claude Code 手动执行
+-> link runs
+-> decision brief
+-> summary --notify
+```
+
+验收问题：
+
+- planner draft 是否比手写 WorkItems 更省时间？
+- prompt pack 是否比单条 prompt 更好用？
+- decision brief 是否真正减少上下文切换？
+- 哪一步仍然应该保持手动？
+
+只有 Phase 4.6 通过后，才考虑 Phase 5 的更强自动化。
+
+---
+
+### Phase 5 候选（暂不启动）
+
+Phase 5 才考虑更激进的能力：
+
+- 自动选择 agent。
+- 自动推进下一个 WorkItem。
+- 与 GitHub issue / PR 绑定。
+- Python planner 接真实 LLM。
+- RAG / long-term memory。
+- 多工作流模板市场。
+
+暂时不要做：
+
+- 自动授权。
+- 自动执行危险命令。
+- 自动读取 transcript / prompt / source / diff / tool output 正文。
+- 云同步 / 账号系统。
+- 大数据库迁移。
+
+### Phase 4 推荐执行顺序
+
+```text
+4.0 真实使用复盘
+4.1 plan draft
+4.2 plan accept
+4.3 prompt pack
+4.4 decision brief
+4.5 Python brain spike
+4.6 真实半自动验收
+```
+
+一句话：Phase 4 的目标是把 brain 从“记录员”升级成“会给计划草稿和决策摘要的助理”，但仍然让用户握着方向盘。
