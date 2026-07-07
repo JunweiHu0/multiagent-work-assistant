@@ -648,3 +648,63 @@ Phase 3.3 / 3.4 / 3.5 have been implemented as a local, manual-first MVP:
 - No automatic task decomposition, no agent spawn, no automatic authorization, no database, no cloud, and no prompt/transcript/source/diff/tool-output reading.
 
 Recommended next action after compact: use the loop on a real feature for several hours, then have CC/Fable review the result. The review question should be: "Does this summary and workflow reduce coordination load enough to justify the next layer of automation?" If the answer is no, improve or cut the summary before adding scheduling.
+
+## 18. 当前进度补记：Phase 3 本地 MVP 已闭环（2026-07-07）
+
+当前状态：SuperNoNo 已经从“多 agent 事件展示”推进到“本地个人工作助理 MVP”。
+
+已完成的链路：
+
+```text
+Codex / Claude Code hooks
+  -> brain relay :4175
+  -> event JSONL + work store
+  -> pet bridge :4174
+  -> SuperNoNo panel / pet UI
+```
+
+已完成能力：
+
+- Phase 3.1：`orchestrator/relay.js` 本地透明中继，默认 `4175 -> 4174`，字节级转发，先应答后异步转发，pet 不在线也不伤害 agent hook。
+- Phase 3.2：`workbench-state.json` 本地 work store，支持 `WorkSession / WorkItem / AgentRun / DecisionRequest` 四对象，relay 可按 `agent:sessionId` 自动归组 AgentRun。
+- Phase 3.3：`work summary` 可从 work store + 当日 JSONL 生成 metadata-only Markdown 总结，并可用 `--notify` 以 `assistant/workbench` 身份通知桌宠。
+- Phase 3.4：`work.js` 手动 CLI 已能创建 session、item、assign、link、decision、done、status。
+- Phase 3.5：`workflow review-loop` 已固化第一条协作流程：Codex 实现 -> Claude Code review -> 用户决策。
+
+仍然明确没有做：
+
+- 不自动 spawn / 控制 Codex 或 Claude Code。
+- 不自动授权。
+- 不自动拆任务。
+- 不读取 prompt、transcript、源码正文、diff、tool output、token、secret。
+- 不接入数据库、云端、账号系统。
+
+当前建议：下一步不要继续堆功能，先拿一个真实半天任务跑完整闭环：
+
+```text
+workflow review-loop
+-> Codex 实现
+-> Claude Code review
+-> link AgentRun
+-> done / decision resolve
+-> work summary --notify
+```
+
+然后让 CC / Fable 做 review，判断 summary 是否真的有用。如果 summary 没有减少你的协调负担，就先改 summary，而不是急着做自动调度。
+
+下一阶段候选：
+
+1. Phase 3.6：真实使用验收与 UX 调整，只改 CLI 文案、summary 结构和文档。
+2. Phase 3.7：把 `work summary` 输出变成更像日报/交接文档的格式。
+3. Phase 3.8：给 `workflow review-loop` 增加模板化 prompt，不自动执行，只生成给 Codex / Claude Code 的任务指令。
+4. Phase 4.0：在真实使用稳定后，再考虑 Python orchestrator 或服务化重构。
+
+## 19. Phase 3.6-3.8 implementation record (2026-07-07)
+
+Implemented after the local MVP closeout:
+
+- Phase 3.6 real-use acceptance plan: `docs/acceptance/phase-3-6-real-use.md`.
+- Phase 3.7 summary v2: `work summary` now renders a handoff-style report with Snapshot, Next Actions, Completed, In Progress, Waiting For User, Todo, Agent Activity, Unassigned Agent Runs, Open Decisions, Files, and Safety Note.
+- Phase 3.8 prompt generator: `work prompt codex wi1`, `work prompt claude wi2`, and `work prompt review-loop` write copyable prompts to `.supernono/prompts/` and print them to stdout.
+
+The orchestrator still does not spawn agents, auto-authorize tools, auto-decompose tasks, read prompt/transcript/source/diff/tool-output, or use a database/cloud account. The next meaningful step is a real-use pass with one actual feature and then a CC/Fable review of the generated summary and prompts.

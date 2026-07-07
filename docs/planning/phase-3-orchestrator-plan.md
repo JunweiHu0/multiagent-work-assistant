@@ -278,3 +278,15 @@ Validation: all `orchestrator/*.js` pass `node --check`; store fixture, relay in
 Security/privacy constraints preserved: summaries only use envelope metadata and user-entered item/decision titles. They do not include prompt, transcript, source, diff, tool output, tokens, or secrets. `--notify` sends only a summary artifact path and a short action string.
 
 Next product step: run this loop on one real task and ask CC/Fable to review whether the summary and workflow are actually useful. Add automation only after the manual loop proves valuable.
+
+## 14. Phase 3.6-3.8 implementation record (2026-07-07)
+
+Added real-use acceptance and assistant-facing ergonomics:
+
+| Phase | Delivery |
+| --- | --- |
+| 3.6 | `docs/acceptance/phase-3-6-real-use.md` checklist and review prompt for validating the workflow on a real task. |
+| 3.7 | Summary v2 in `orchestrator/summary.js`, changing the report from a raw status dump into a handoff-style document. |
+| 3.8 | Prompt generator in `orchestrator/prompt.js` plus `work.js prompt codex/claude/review-loop`. |
+
+These features are intentionally manual. They generate guidance and summaries but do not launch, control, or authorize any agent.

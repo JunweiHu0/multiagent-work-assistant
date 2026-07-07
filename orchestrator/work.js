@@ -12,7 +12,7 @@
  *   node orchestrator/work.js decision add "Accept this plan?" [--item <itemId>]
  *   node orchestrator/work.js decision resolve <drId> <accept|reject|note>
  *   node orchestrator/work.js workflow review-loop "Feature title" [--goal "..."]
- *   node orchestrator/work.js summary [--out path] [--notify]
+ *   node orchestrator/work.js summary [--out path] [--notify]`n *   node orchestrator/work.js prompt <codex|claude|review-loop> [itemId] [--out path]
  *   node orchestrator/work.js status
  */
 const { createWorkStore } = require('./work-store');
@@ -165,6 +165,16 @@ async function main() {
       }
       return;
     }
+    if (group === 'prompt') {
+      const { writePrompt } = require('./prompt');
+      const kind = verb;
+      const itemId = rest[0];
+      const result = writePrompt(kind, itemId, { outPath: flags.out && flags.out !== true ? flags.out : null });
+      console.log(`OK prompt written: ${result.outPath}`);
+      console.log('');
+      console.log(result.body);
+      return;
+    }
 
     console.log('Usage: node orchestrator/work.js status');
     process.exitCode = 2;
@@ -175,3 +185,4 @@ async function main() {
 }
 
 main();
+

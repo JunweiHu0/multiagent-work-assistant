@@ -10,21 +10,27 @@
 - Phase 2.6: Semantic gates complete; live permission/error/testPass mappings remain gated on real structured payload evidence.
 - Phase 2.7: Real-world operations verified (install -> health-check -> live hook -> uninstall -> restore). Phase 2 closed.
 - Phase 3.0: Orchestrator design complete; see `docs/planning/phase-3-orchestrator-plan.md`.
-- Phase 3.1: Brain relay + local event log complete (`orchestrator/`): transparent 4175 -> 4174 forwarding, JSONL event log, fixture 22/22.
-- Phase 3.2: Work store + manual CLI complete: WorkSession/WorkItem/AgentRun/DecisionRequest, relay auto-builds AgentRuns, corruption-safe state file.
-- Phase 3.3: Work summary complete: `work summary` renders metadata-only Markdown from workbench-state + daily JSONL; optional assistant notification to the pet.
-- Phase 3.4: Manual orchestration CLI complete enough for MVP: session/item/assign/link/status/decision/done plus `workflow review-loop`.
-- Phase 3.5: Codex -> Claude review loop template complete: creates a Codex build item, Claude Code review item, and an explicit user decision gate. It does not spawn or control agents.
+- Phase 3.1: Brain relay + local event log complete.
+- Phase 3.2: Work store + manual CLI complete.
+- Phase 3.3: Metadata-only work summary complete.
+- Phase 3.4: Manual orchestration CLI complete enough for MVP.
+- Phase 3.5: Codex -> Claude review-loop template complete.
+- Phase 3.6: Real-use acceptance checklist complete.
+- Phase 3.7: Summary v2 handoff format complete.
+- Phase 3.8: Copyable agent prompt generator complete.
 
 ## Next Recommended Phase
 
-Use this MVP on a real half-day task and have CC/Fable review the product behavior, not just the code:
+Run the system on one real task and review product value:
 
-1. Start `node orchestrator/relay.js`.
-2. Point real adapters at it with `SUPERNONO_BRIDGE_PORT=4175`.
-3. Create a review workflow with `node orchestrator/work.js workflow review-loop "<task>" --goal "..."`.
-4. Let Codex implement and Claude Code review manually.
-5. Link runs with `work.js item link`, mark done manually, then generate `work.js summary --notify`.
-6. Review whether the summary is genuinely useful. If not, cut or redesign the summary before adding automation.
+1. `node orchestrator/relay.js`
+2. `node orchestrator/work.js workflow review-loop "<task>" --goal "..."`
+3. `node orchestrator/work.js prompt review-loop`
+4. Copy prompts into Codex and Claude Code manually.
+5. Link runs, resolve the decision, mark items done.
+6. `node orchestrator/work.js summary --notify`
+7. Ask CC/Fable to review the real-use result using `docs/acceptance/phase-3-6-real-use.md`.
 
-Still gated/backlog: Notification -> permission_required, permission_resolved synthesis, PostToolUse -> error, testPass, automatic task decomposition, automatic agent spawning, database/cloud/account features.
+Do not add automatic scheduling until the manual loop proves useful.
+
+Backlog remains gated: Notification -> permission_required, permission_resolved synthesis, PostToolUse -> error, testPass, automatic task decomposition, automatic agent spawning, database/cloud/account features.

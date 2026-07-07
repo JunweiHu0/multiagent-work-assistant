@@ -147,3 +147,68 @@ node orchestrator/relay-fixture-test.js
 node orchestrator/summary-fixture-test.js
 node orchestrator/workflow-fixture-test.js
 ```
+
+## Phase 3.6-3.8 real-use, summary v2, and prompt generation
+
+The local MVP is now meant to be tested on real work before adding automation.
+
+### Real-use acceptance
+
+Use the checklist in `docs/acceptance/phase-3-6-real-use.md`. The pass/fail question is product usefulness, not just script success: does the workflow reduce coordination load enough to justify more automation?
+
+### Summary v2
+
+```powershell
+node orchestrator/work.js summary
+node orchestrator/work.js summary --notify
+```
+
+The summary is a handoff-style Markdown report with:
+
+- Snapshot
+- Next Actions
+- Completed
+- In Progress
+- Waiting For User
+- Todo / Not Started
+- Agent Activity
+- Unassigned Agent Runs
+- Open Decisions
+- Files
+- Safety Note
+
+It is still metadata-only. It does not include prompt, transcript, source, diff, tool output, tokens, or secrets.
+
+### Prompt generator
+
+```powershell
+node orchestrator/work.js prompt codex wi1
+node orchestrator/work.js prompt claude wi2
+node orchestrator/work.js prompt review-loop
+```
+
+Prompts are written to `.supernono/prompts/` and also printed to stdout for copying. They are task instructions only: the orchestrator does not send them to agents and does not spawn Codex or Claude Code.
+
+### Recommended manual loop
+
+```powershell
+node orchestrator/relay.js
+node orchestrator/work.js workflow review-loop "Implement feature X" --goal "Codex builds, Claude reviews, user decides"
+node orchestrator/work.js prompt review-loop
+# copy prompts into agents manually
+node orchestrator/work.js status
+node orchestrator/work.js item link wi1 codex:<sessionId>
+node orchestrator/work.js item link wi2 claude-code:<sessionId>
+node orchestrator/work.js decision resolve dr1 accept
+node orchestrator/work.js item done wi1
+node orchestrator/work.js item done wi2
+node orchestrator/work.js summary --notify
+```
+
+Additional tests:
+
+```powershell
+node orchestrator/summary-fixture-test.js
+node orchestrator/prompt-fixture-test.js
+node orchestrator/workflow-fixture-test.js
+```

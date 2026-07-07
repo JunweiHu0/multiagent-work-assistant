@@ -1,12 +1,12 @@
 ﻿'use strict';
 /*
- * summary.js - Phase 3.3 user-facing work summary.
+ * summary.js - Phase 3.7 user-facing work summary v2.
  *
- * Reads the local work store plus the relay JSONL event log and writes a small
- * Markdown report. It deliberately summarizes metadata only: item titles,
- * run ids, event type counts, timings, open decisions, and forward status.
- * It never reads prompt/transcript/source/diff/tool output and never copies
- * payload bodies into the summary.
+ * Reads the local work store plus the relay JSONL event log and writes a
+ * handoff-style Markdown report. It summarizes metadata only: user-entered
+ * titles/decisions, item status, run ids, event type counts, timings, and
+ * forward status. It never reads prompt/transcript/source/diff/tool output and
+ * never copies payload bodies into the summary.
  */
 const fs = require('fs');
 const path = require('path');
@@ -16,35 +16,18 @@ const { createWorkStore } = require('./work-store');
 const DEFAULT_DIR = path.join(__dirname, '..', '.supernono');
 const SEND_TIMEOUT_MS = 800;
 
-function dataDir(dirOverride) {
-  return dirOverride || process.env.SN_BRAIN_DATA_DIR || DEFAULT_DIR;
-}
-
+function dataDir(dirOverride) { return dirOverride || process.env.SN_BRAIN_DATA_DIR || DEFAULT_DIR; }
 function pad(n) { return String(n).padStart(2, '0'); }
-function stamp(d) {
-  return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' +
-    pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
-}
+function stamp(d) { return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()); }
 function dayStamp(d) { return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()); }
-
-function safeText(v, max) {
-  const s = typeof v === 'string' ? v : '';
-  return s.replace(/[\r\n]+/g, ' ').trim().slice(0, max || 200);
-}
-
-function shortId(v) {
-  const s = typeof v === 'string' ? v : '';
-  return s.length > 12 ? s.slice(0, 8) + '...' : s;
-}
-
+function safeText(v, max) { return (typeof v === 'string' ? v : '').replace(/[\r\n]+/g, ' ').trim().slice(0, max || 200); }
+function shortId(v) { const s = typeof v === 'string' ? v : ''; return s.length > 12 ? s.slice(0, 8) + '...' : s; }
 function msBetween(a, b) {
   if (!a || !b) return null;
   const x = new Date(a).getTime();
   const y = new Date(b).getTime();
-  if (!Number.isFinite(x) || !Number.isFinite(y) || y < x) return null;
-  return y - x;
+  return Number.isFinite(x) && Number.isFinite(y) && y >= x ? y - x : null;
 }
-
 function fmtDuration(ms) {
   if (ms == null) return 'n/a';
   const sec = Math.round(ms / 1000);
@@ -80,59 +63,95 @@ function eventCountsText(counts) {
   return entries.length ? entries.map(([k, v]) => k + ' x' + v).join(', ') : 'none';
 }
 
+function runsForItem(status, item) {
+  return (item.runs || []).map((rid) => status.runs.find((r) => r.id === rid)).filter(Boolean);
+}
+
+function itemLine(status, item) {
+  const runs = runsForItem(status, item);
+  const runText = runs.length ? runs.map((r) => `${r.id}:${r.agent}/${r.state}`).join(', ') : 'no linked runs';
+  return `- ${item.id} [${item.status}] ${safeText(item.title, 180)} (role=${item.role}${item.assignedAgent ? ', agent=' + item.assignedAgent : ''}; ${runText})`;
+}
+
+function addItemGroup(lines, title, status, items) {
+  lines.push('## ' + title);
+  if (!items.length) lines.push('- None.');
+  for (const item of items) {
+    lines.push(itemLine(status, item));
+    for (const run of runsForItem(status, item)) {
+      lines.push(`  - run ${run.id}: ${run.agent}:${shortId(run.agentSessionId)} [${run.state}], last=${run.lastEventType}, events=${eventCountsText(run.eventCounts)}, elapsed=${fmtDuration(msBetween(run.startedAt, run.lastEventAt))}`);
+    }
+  }
+  lines.push('');
+}
+
+function nextActions(status, items) {
+  const out = [];
+  for (const d of status.openDecisions) out.push(`Resolve decision ${d.id}: ${safeText(d.summary, 180)}`);
+  for (const item of items.filter((i) => i.status === 'waiting_user')) out.push(`Unblock ${item.id}: ${safeText(item.title, 140)}`);
+  if (status.unassignedRuns.length) out.push(`Link ${status.unassignedRuns.length} unassigned AgentRun(s) to WorkItems.`);
+  for (const item of items.filter((i) => i.status === 'in_progress')) out.push(`Check progress on ${item.id}: ${safeText(item.title, 140)}`);
+  for (const item of items.filter((i) => i.status === 'todo')) out.push(`Start or assign ${item.id}: ${safeText(item.title, 140)}`);
+  return out.slice(0, 8);
+}
+
 function renderSummary(status, logStats, generatedAt) {
   const ws = status.activeSession || status.sessions[status.sessions.length - 1] || null;
+  const items = ws ? status.items.filter((i) => i.sessionId === ws.id) : status.items;
+  const completed = items.filter((i) => i.status === 'done');
+  const active = items.filter((i) => i.status === 'in_progress');
+  const waiting = items.filter((i) => i.status === 'waiting_user');
+  const todo = items.filter((i) => i.status === 'todo');
+  const dropped = items.filter((i) => i.status === 'dropped');
   const lines = [];
-  lines.push('# SuperNoNo Work Summary');
+
+  lines.push('# SuperNoNo Work Handoff');
   lines.push('');
+  lines.push('## Snapshot');
   lines.push('- Generated: ' + generatedAt);
   lines.push('- Session: ' + (ws ? `${ws.id} [${ws.status}] ${safeText(ws.title, 160)}` : 'none'));
   if (ws && ws.goal) lines.push('- Goal: ' + safeText(ws.goal, 300));
-  lines.push('- Store: ' + status.filePath);
-  lines.push('- Event log: ' + logStats.file);
+  lines.push(`- Items: done=${completed.length}, active=${active.length}, waiting=${waiting.length}, todo=${todo.length}, dropped=${dropped.length}`);
+  lines.push(`- Runs: linked=${status.runs.length - status.unassignedRuns.length}, unassigned=${status.unassignedRuns.length}`);
+  lines.push(`- Decisions: open=${status.openDecisions.length}, total=${status.decisions.length}`);
+  lines.push(`- Relay today: total=${logStats.total}, forwarded=${logStats.forwarded}, missed=${logStats.missed}`);
   lines.push('');
 
-  const items = ws ? status.items.filter((i) => i.sessionId === ws.id) : status.items;
-  lines.push('## Items');
-  if (!items.length) lines.push('- No work items yet.');
-  for (const item of items) {
-    lines.push(`- ${item.id} [${item.status}] ${safeText(item.title, 180)} (role=${item.role}${item.assignedAgent ? ', agent=' + item.assignedAgent : ''})`);
-    const runs = (item.runs || []).map((rid) => status.runs.find((r) => r.id === rid)).filter(Boolean);
-    if (!runs.length) {
-      lines.push('  - Runs: none linked');
-    } else {
-      for (const run of runs) {
-        lines.push(`  - ${run.id} ${run.agent}:${shortId(run.agentSessionId)} [${run.state}], last=${run.lastEventType}, events=${eventCountsText(run.eventCounts)}, elapsed=${fmtDuration(msBetween(run.startedAt, run.lastEventAt))}`);
-      }
-    }
-  }
+  lines.push('## Next Actions');
+  const actions = nextActions(status, items);
+  if (!actions.length) lines.push('- No obvious next action. Consider closing the session or starting the next WorkItem.');
+  for (const action of actions) lines.push('- ' + action);
+  lines.push('');
+
+  addItemGroup(lines, 'Completed', status, completed);
+  addItemGroup(lines, 'In Progress', status, active);
+  addItemGroup(lines, 'Waiting For User', status, waiting);
+  addItemGroup(lines, 'Todo / Not Started', status, todo);
+  if (dropped.length) addItemGroup(lines, 'Dropped', status, dropped);
+
+  lines.push('## Agent Activity');
+  const agents = Object.entries(logStats.byAgent).sort((a, b) => a[0].localeCompare(b[0]));
+  if (!agents.length) lines.push('- No relay events found for today.');
+  for (const [agent, info] of agents) lines.push(`- ${agent}: total=${info.total}; ${eventCountsText(info.types)}`);
   lines.push('');
 
   lines.push('## Unassigned Agent Runs');
   if (!status.unassignedRuns.length) lines.push('- None.');
-  for (const run of status.unassignedRuns) {
-    lines.push(`- ${run.id} ${run.agent}:${shortId(run.agentSessionId)} [${run.state}], last=${run.lastEventType}, events=${eventCountsText(run.eventCounts)}`);
-  }
+  for (const run of status.unassignedRuns) lines.push(`- ${run.id} ${run.agent}:${shortId(run.agentSessionId)} [${run.state}], last=${run.lastEventType}, events=${eventCountsText(run.eventCounts)}`);
   lines.push('');
 
-  lines.push('## Decisions');
-  if (!status.openDecisions.length) lines.push('- No open decisions.');
-  for (const d of status.openDecisions) {
-    lines.push(`- ${d.id} ${safeText(d.summary, 240)}${d.workItemId ? ' (item ' + d.workItemId + ')' : ''}`);
-  }
+  lines.push('## Open Decisions');
+  if (!status.openDecisions.length) lines.push('- None.');
+  for (const d of status.openDecisions) lines.push(`- ${d.id} ${safeText(d.summary, 240)}${d.workItemId ? ' (item ' + d.workItemId + ')' : ''}`);
   lines.push('');
 
-  lines.push('## Relay Event Totals');
-  lines.push(`- Today: total=${logStats.total}, forwarded=${logStats.forwarded}, missed=${logStats.missed}, malformedLogLines=${logStats.rejected}`);
-  const agents = Object.entries(logStats.byAgent).sort((a, b) => a[0].localeCompare(b[0]));
-  if (!agents.length) lines.push('- No relay events found for today.');
-  for (const [agent, info] of agents) {
-    lines.push(`- ${agent}: total=${info.total}; ${eventCountsText(info.types)}`);
-  }
+  lines.push('## Files');
+  lines.push('- Store: ' + status.filePath);
+  lines.push('- Event log: ' + logStats.file);
   lines.push('');
 
-  lines.push('## Notes');
-  lines.push('- This summary is metadata-only. It intentionally excludes prompt, transcript, source, diff, tool output, tokens, and secrets.');
+  lines.push('## Safety Note');
+  lines.push('- Metadata-only: this report excludes prompt, transcript, source, diff, tool output, tokens, and secrets.');
   lines.push('- Item completion remains manual; a completed AgentRun does not automatically mark a WorkItem done.');
   lines.push('');
   return lines.join('\n');
@@ -157,11 +176,7 @@ function sendAssistantSummary(outPath, options) {
   options = options || {};
   const port = Number(options.port || process.env.SN_SUMMARY_NOTIFY_PORT || process.env.SN_BRAIN_PORT || process.env.SUPERNONO_BRIDGE_PORT || 4175);
   const event = {
-    type: 'completed',
-    agent: 'assistant',
-    adapter: 'workbench',
-    sessionId: 'workbench',
-    taskId: null,
+    type: 'completed', agent: 'assistant', adapter: 'workbench', sessionId: 'workbench', taskId: null,
     payload: {
       action: 'SuperNoNo work summary generated',
       artifact: outPath,
@@ -171,10 +186,9 @@ function sendAssistantSummary(outPath, options) {
   };
   const raw = JSON.stringify(event);
   return new Promise((resolve) => {
-    const req = http.request({
-      host: '127.0.0.1', port, path: '/signal', method: 'POST', timeout: SEND_TIMEOUT_MS,
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(raw) },
-    }, (res) => { res.resume(); res.on('end', () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, port })); });
+    const req = http.request({ host: '127.0.0.1', port, path: '/signal', method: 'POST', timeout: SEND_TIMEOUT_MS,
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(raw) } },
+    (res) => { res.resume(); res.on('end', () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, port })); });
     req.on('error', (err) => resolve({ ok: false, port, error: String((err && (err.code || err.message)) || 'error').slice(0, 80) }));
     req.on('timeout', () => { req.destroy(); resolve({ ok: false, port, error: 'timeout' }); });
     req.write(raw);
@@ -195,8 +209,6 @@ async function main() {
   }
 }
 
-if (require.main === module) {
-  main().catch((err) => { console.error('summary failed: ' + ((err && err.message) || err)); process.exit(1); });
-}
+if (require.main === module) main().catch((err) => { console.error('summary failed: ' + ((err && err.message) || err)); process.exit(1); });
 
 module.exports = { writeSummary, renderSummary, countEventLog, sendAssistantSummary };
