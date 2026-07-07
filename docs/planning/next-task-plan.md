@@ -1,18 +1,18 @@
 # Multiagent Work Assistant 下一阶段任务规划
 
-- 日期：2026-07-06
+- 日期：2026-07-07
 - 主仓库：`multiagent-work-assistant`
 - 关联显示层仓库：`codex-task-pet`
-- 当前阶段：Phase 2.5/2.6 已完成工具化收口，下一步进入真实语义补测或 Phase 2.7 运维验证
+- 当前阶段：**Phase 2.7 真实环境运维验证**，目标是验证 install / health-check / live hook / uninstall 在新项目和真实项目中可重复运行
 - 本文目的：在上下文 compact 或换电脑后，继续按本文推进，不依赖聊天历史。
 
 ---
 
 ## 0. Compact 后先看这里
 
-当前最新可靠进展（2026-07-06 晚更新）：
+当前最新可靠进展（2026-07-07 compact 前更新）：
 
-- `multiagent-work-assistant` 的 `main` 已提交到：`9859124 Add Claude Code adapter MVP`。
+- `multiagent-work-assistant` 的 `main` 已提交到：`c8e69a5 Add adapter install health checks and semantic gates`。
 - ✅ Phase 2.1 probe 完成（结论在 `docs/claude-code/claude-code-hooks-probe-plan.md` §7）：
   真实记录覆盖 `SessionStart` / `PreToolUse`(Bash/Read/Write) / `PostToolUse` / `Stop`；
   `Notification` 未观测到；失败态无可靠结构化字段。
@@ -20,11 +20,15 @@
   fixture 24/24（含泄漏自检、无桥接 <50ms 静默退出）、真实桌宠端到端投递通过。
   范围 = `Bash -> command_running`、`Read/Grep/Glob/WebFetch/WebSearch -> file_reading`、
   `Write/Edit/MultiEdit/NotebookEdit -> file_editing`、`PostToolUse -> step_done`、`Stop -> turn_ended`。
-- 🔄 **Phase 2.3 当前目标**：真实 Codex + Claude Code 双 agent 并发验收。
+- ✅ **Phase 2.3 已完成**：真实 Codex + Claude Code 双 agent 并发验收通过。
   验收文档 `docs/acceptance/phase-2-3-dual-agent-acceptance.md` + 仿真脚本
   `adapters/shared/manual-realistic-dual-agent-test.js` 已就绪；仿真层已通过
   （pet 端断言 19/19、真实桌宠投递 7/7、旧 manual-multiagent-test 9/9 不受影响、
   未发现 pet 端 multiagent bug）；**真实层人工并发测试已由用户确认通过**（验收文档 §3）。
+- ✅ **Phase 2.4 已完成**：`codex-task-pet` 的 multiagent panel 产品化完成，支持卡片 focus、pin、timeline filter、stale 提示。
+- ✅ **Phase 2.5 已完成**：Claude Code adapter 增加 `install.js` / `uninstall.js` / `health-check.js` / 安装 fixture。
+- ✅ **Phase 2.6 已完成**：语义门已落地，`permission_required` / `error` / `testPass` 仍等待真实结构化 payload 后再接入 live hooks。
+- 🔄 **Phase 2.7 当前目标**：真实环境运维验证，确认 adapter 能在新项目和真实项目里安装、检查、触发、卸载、恢复。
 - ⛔ 仍明确不在本阶段：`Notification -> permission_required`（桌面版实测未触发该
   hook，待新证据）、`permission_resolved` 合成、`PostToolUse -> error`、`testPass`
   能量规则。
@@ -461,3 +465,121 @@ docs/claude-code/phase-2-6-semantic-gates.md
 重要结论：`permission_required`、`permission_resolved`、`error`、`testPass` 仍不接入 live hooks，直到真实 probe 捕获到稳定结构化字段。当前完成的是可执行的准入规则，防止未来靠 stdout/stderr/prompt/source/diff/transcript 误判。
 
 下一步建议：Phase 2.7 先跑真实安装/健康检查，再做 Notification 与失败态专项 probe；只有拿到结构化字段后，才逐个启用 2.6 语义映射。
+---
+
+## 14. Phase 2.7 真实环境运维验证（compact 后优先执行）
+
+Phase 2.7 不是新增功能，而是把前面做好的 adapter 工具链放到真实环境里反复跑通。目标是确认以后换项目、换电脑、换会话时，Claude Code adapter 仍然能低成本接入 SuperNoNo。
+
+### 14.1 验证目标
+
+必须证明以下链路可重复：
+
+1. 在一个全新测试项目中安装 Claude Code hooks。
+2. `health-check.js` 能识别 Node、adapter 文件、settings hooks、重复 hooks、SuperNoNo bridge 状态。
+3. 启动桌宠后，真实 Claude Code 会话运行 `echo supernono-phase-2-7` 能驱动 `claude-code-hooks` 事件。
+4. 卸载 hooks 后，新 Claude Code 会话不再触发 adapter。
+5. 在你的真实项目中重复 health-check，确认不会和已有 `.claude/settings.json` 冲突。
+
+### 14.2 推荐测试目录
+
+建议新建一个干净目录作为一次性验证项目：
+
+```cmd
+mkdir C:\Users\1\Desktop\project\supernono-adapter-smoke
+cd C:\Users\1\Desktop\project\supernono-adapter-smoke
+echo # SuperNoNo adapter smoke > README.md
+```
+
+### 14.3 安装与健康检查
+
+在 `multiagent-work-assistant` 仓库执行：
+
+```cmd
+cd C:\Users\1\Desktop\project\multiagent-work-assistant
+node adapters\claude-code\install.js --project C:\Users\1\Desktop\project\supernono-adapter-smoke
+node adapters\claude-code\health-check.js --project C:\Users\1\Desktop\project\supernono-adapter-smoke
+```
+
+预期：
+
+- Node resolves = OK。
+- adapter files = OK。
+- adapter hooks installed = OK。
+- duplicate adapter hooks = OK none。
+- 如果桌宠没启动，SuperNoNo bridge 可以是 WARN，不算失败。
+
+### 14.4 真实 hook 验收
+
+先启动桌宠：
+
+```cmd
+cd C:\Users\1\Desktop\project\codex-task-pet
+npm.cmd start
+```
+
+然后在 `supernono-adapter-smoke` 目录里开新的 Claude Code 会话，要求它实际调用 shell：
+
+```text
+请实际调用 shell 工具运行 echo supernono-phase-2-7
+```
+
+预期：
+
+- 桌宠/面板出现 `agent: claude-code`。
+- timeline 出现 `command_running -> step_done -> turn_ended`。
+- `SuperNoNo.getAgents()` 能看到 `claude-code:<session_id>`。
+- `SuperNoNo.getTimeline()` 最近事件归属为 `claude-code`。
+
+### 14.5 卸载验证
+
+```cmd
+cd C:\Users\1\Desktop\project\multiagent-work-assistant
+node adapters\claude-code\uninstall.js --project C:\Users\1\Desktop\project\supernono-adapter-smoke
+node adapters\claude-code\health-check.js --project C:\Users\1\Desktop\project\supernono-adapter-smoke
+```
+
+预期：
+
+- health-check 报 adapter hooks installed = FAIL 或缺失，这是卸载后的预期结果。
+- 新开 Claude Code 会话再运行 echo，不应再发送 `claude-code-hooks` 事件。
+- `.claude/settings.json.supernono-backup-*` 备份存在，可用于恢复。
+
+### 14.6 真实项目验证
+
+对你日常使用的项目只先跑 health-check，不要急着重装：
+
+```cmd
+cd C:\Users\1\Desktop\project\multiagent-work-assistant
+node adapters\claude-code\health-check.js --project C:\path\to\your-real-project
+```
+
+如果 hooks 未安装，再执行：
+
+```cmd
+node adapters\claude-code\install.js --project C:\path\to\your-real-project
+```
+
+安装后必须新开 Claude Code 会话。
+
+### 14.7 Phase 2.7 验收记录要写什么
+
+完成后在本文档下方追加一段“Phase 2.7 实测记录”，至少包含：
+
+- 测试项目路径。
+- install 输出是否成功。
+- health-check 输出摘要。
+- 桌宠是否收到真实 `claude-code-hooks` 事件。
+- uninstall 是否成功。
+- 是否发现 Windows 路径、Node、settings merge、重复 hooks 问题。
+
+### 14.8 Phase 2.8 / Phase 3 前置条件
+
+只有 Phase 2.7 跑通后，再考虑：
+
+1. Notification / permission 专项 probe。
+2. 失败态 / testPass 专项 probe。
+3. 基于真实结构化 payload 开启 2.6 语义映射。
+4. Phase 3 orchestrator / task delegation。
+
+在没有真实结构化 payload 之前，不要把 `permission_required`、`error`、`testPass` 接进 live hooks。
