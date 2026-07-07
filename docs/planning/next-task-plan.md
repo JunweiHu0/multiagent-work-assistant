@@ -3,7 +3,7 @@
 - 日期：2026-07-07
 - 主仓库：`multiagent-work-assistant`
 - 关联显示层仓库：`codex-task-pet`
-- 当前阶段：**Phase 2.7 真实环境运维验证**，目标是验证 install / health-check / live hook / uninstall 在新项目和真实项目中可重复运行
+- 当前阶段：Phase 2 全部收口（2.1–2.7 完成），当前进行 **Phase 3.0 orchestrator 设计**，设计文档见 `docs/planning/phase-3-orchestrator-plan.md`
 - 本文目的：在上下文 compact 或换电脑后，继续按本文推进，不依赖聊天历史。
 
 ---
@@ -28,10 +28,20 @@
 - ✅ **Phase 2.4 已完成**：`codex-task-pet` 的 multiagent panel 产品化完成，支持卡片 focus、pin、timeline filter、stale 提示。
 - ✅ **Phase 2.5 已完成**：Claude Code adapter 增加 `install.js` / `uninstall.js` / `health-check.js` / 安装 fixture。
 - ✅ **Phase 2.6 已完成**：语义门已落地，`permission_required` / `error` / `testPass` 仍等待真实结构化 payload 后再接入 live hooks。
-- 🔄 **Phase 2.7 当前目标**：真实环境运维验证，确认 adapter 能在新项目和真实项目里安装、检查、触发、卸载、恢复。
+- ✅ **Phase 2.7 已完成**（2026-07-07，用户真实环境确认）：install → health-check →
+  live hook（真实 Claude Code 会话驱动桌宠）→ uninstall → 恢复 全链路跑通，
+  adapter 可在新项目与真实项目中低成本重复接入。Phase 2 全部收口。
+- 🔄 **Phase 3.0 当前目标**：orchestrator 方案设计与最小架构落地（只出设计文档，
+  不实现代码）。设计文档：`docs/planning/phase-3-orchestrator-plan.md`。
+  核心决策：orchestrator MVP = 记账员+中继站+发言人（不 spawn agent、不自动
+  分解、不自动授权）；event relay（adapter→4175→4174）让 pet 与 adapter 零改动；
+  orchestrator 以 `agent:"assistant"` 身份走 signal protocol 向 pet 汇报。
+- 后续入口：**Phase 3.1** 本地 WorkSession store + relay → **Phase 3.2** 手动
+  WorkItem + 分配 agent → **Phase 3.3** 从事件流生成用户摘要（拆分与验收标准
+  见设计文档 §8）。
 - ⛔ 仍明确不在本阶段：`Notification -> permission_required`（桌面版实测未触发该
   hook，待新证据）、`permission_resolved` 合成、`PostToolUse -> error`、`testPass`
-  能量规则。
+  能量规则；云端 / 账号 / 数据库 / 自动授权 / 读取 prompt 与 transcript 正文。
 
 当前工作树注意事项：
 
@@ -583,3 +593,37 @@ node adapters\claude-code\install.js --project C:\path\to\your-real-project
 4. Phase 3 orchestrator / task delegation。
 
 在没有真实结构化 payload 之前，不要把 `permission_required`、`error`、`testPass` 接进 live hooks。
+
+---
+
+## 15. Phase 2.7 完成记录（2026-07-07）
+
+用户在真实环境确认以下链路全部跑通：
+
+1. 在全新测试项目安装 Claude Code hooks（`install.js`）。
+2. `health-check.js` 正确识别 Node / adapter 文件 / settings hooks / 重复 hooks / bridge 状态。
+3. 桌宠运行下，真实 Claude Code 会话驱动 `claude-code-hooks` 事件进入面板。
+4. `uninstall.js` 卸载后新会话不再触发 adapter。
+5. settings 备份可恢复，与已有 `.claude/settings.json` 无冲突。
+
+结论：adapter 工具链达到"换项目、换电脑、换会话可低成本重复接入"的标准，
+**Phase 2 全部收口**。Notification / 失败态专项 probe 转入 backlog（§8），
+不阻塞 Phase 3。
+
+---
+
+## 16. Phase 3 入口（当前主线）
+
+设计文档：[`docs/planning/phase-3-orchestrator-plan.md`](phase-3-orchestrator-plan.md)（Phase 3.0 交付物，先读它）。
+
+| 阶段 | 内容 | 状态 |
+| --- | --- | --- |
+| Phase 3.0 | orchestrator 设计文档：产品目标 / 非目标 / agent 角色 / relay 架构 / 数据模型（WorkSession, WorkItem, AgentRun, DecisionRequest）/ 3.1-3.3 拆分 / 风险清单 | ✅ 本轮完成 |
+| Phase 3.1 | 本地 WorkSession store + event relay（4175→4174 透明转发 + JSONL 落盘 + `work status` 只读 CLI） | 下一步 |
+| Phase 3.2 | 手动创建 WorkItem + 分配 agent（`work new/add/assign/link/decide/done`；AgentRun 从事件流自动建立） | 待做 |
+| Phase 3.3 | 从事件流生成用户摘要（`work summary` → Markdown；assistant 身份向 pet 汇报 completed） | 待做 |
+
+Phase 3 全程约束（设计文档 §2 的铁律摘要）：不做云端/账号/数据库/自动授权；
+不读 prompt / transcript / 源码正文 / diff / tool output；不 spawn 或控制 agent；
+pet 仓库预期零提交；协议零变更（`payload.project` 增量候选留到 3.2 用出真实
+痛感再议）。

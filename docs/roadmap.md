@@ -8,12 +8,15 @@
 - Phase 2.4: Multiagent panel productization complete in `codex-task-pet`.
 - Phase 2.5: Adapter install / uninstall / health-check tooling complete.
 - Phase 2.6: Semantic gates complete; live permission/error/testPass mappings remain gated on real structured payload evidence.
+- Phase 2.7: Real-world operations verified (install -> health-check -> live hook -> uninstall -> restore). Phase 2 closed.
+- Phase 3.0: Orchestrator design complete — see `docs/planning/phase-3-orchestrator-plan.md`.
 
 ## Next Recommended Phase
 
-Phase 2.7 should focus on real-world operations:
+Phase 3.1 — local WorkSession store + event relay:
 
-1. Run `health-check.js` on a fresh project and on the user's actual project.
-2. Capture new probe records for Notification and failed tool calls.
-3. If structured fields are confirmed, wire `permission_required`, `error`, and `testPass` one at a time.
-4. Start Phase 3 orchestrator only after semantics are evidence-backed.
+1. Transparent relay (adapters -> 4175 -> pet 4174) with JSONL event logging; zero changes to adapters and pet.
+2. `workbench-state.json` store + read-only `work status` CLI.
+3. Acceptance: dual-agent test via relay behaves identically to direct delivery; relay downtime never harms agents.
+
+Notification / failure-state probes stay in backlog and do not block Phase 3.
