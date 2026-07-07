@@ -708,3 +708,24 @@ Implemented after the local MVP closeout:
 - Phase 3.8 prompt generator: `work prompt codex wi1`, `work prompt claude wi2`, and `work prompt review-loop` write copyable prompts to `.supernono/prompts/` and print them to stdout.
 
 The orchestrator still does not spawn agents, auto-authorize tools, auto-decompose tasks, read prompt/transcript/source/diff/tool-output, or use a database/cloud account. The next meaningful step is a real-use pass with one actual feature and then a CC/Fable review of the generated summary and prompts.
+
+## 20. Phase 3.9 收口记录（2026-07-07）
+
+已执行本地收口：
+
+- `node orchestrator\work.js status` 可读取当前 active session。
+- `node orchestrator\work.js summary --notify` 成功生成 summary，并通过 `assistant/workbench` 信号通知到 brain relay `4175`。
+- 当前 active session 是 `ws2`：`wi3`（Codex build）与 `wi4`（Claude review）仍处于 `todo`，`dr2` 决策仍 open。
+
+结论：Phase 3.6-3.8 的本地机制与 summary 通知可用，但这轮尚未形成“真实 agent run 已 link 并完成”的完整产品验收记录。下一步应让 Codex 和 Claude Code 真实执行生成的 prompts，然后用 `work status` 找到 unassigned AgentRuns，并执行：
+
+```cmd
+node orchestrator\work.js item link wi3 codex:<sessionId>
+node orchestrator\work.js item link wi4 claude-code:<sessionId>
+node orchestrator\work.js decision resolve dr2 accept
+node orchestrator\work.js item done wi3
+node orchestrator\work.js item done wi4
+node orchestrator\work.js summary --notify
+```
+
+完成后再让 CC/Fable review summary v2 与 prompt generator 的产品价值。

@@ -32,9 +32,9 @@ const body = fs.readFileSync(result.outPath, 'utf8');
 const stats = countEventLog(dir);
 
 check(fs.existsSync(result.outPath), 'summary file created');
-check(body.includes('# SuperNoNo Work Summary'), 'has title');
+check(body.includes('# SuperNoNo Work Handoff'), 'has title');
 check(body.includes('wi1 [in_progress]'), 'item status included');
-check(body.includes('ar1 codex:'), 'linked run included');
+check(body.includes('run ar1: codex:'), 'linked run included');
 check(body.includes('dr1 Accept the relay design?'), 'open decision included');
 check(body.includes('codex: total=1'), 'event totals include codex');
 check(body.includes('claude-code: total=1'), 'event totals include claude-code');
@@ -45,3 +45,4 @@ check(!body.includes('LEAK_TRANSCRIPT'), 'transcript not leaked');
 
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
 process.exit(failures === 0 ? 0 : 1);
+

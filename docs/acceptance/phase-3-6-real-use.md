@@ -132,3 +132,35 @@ Prioritize:
 
 Do not implement code unless asked. Produce findings first, then recommended next steps.
 ```
+
+## Run Record: 2026-07-07 Local MVP Validation
+
+Result: partial pass, ready for CC/Fable review.
+
+What was verified:
+
+- Node syntax checks and orchestrator fixture tests passed in the prior validation run.
+- `work status` runs against the active WorkSession `ws2`.
+- `work summary --notify` generated a Markdown handoff successfully.
+- Assistant notification reached the brain relay on port `4175`.
+- Prompt generator produced copyable Codex / Claude Code prompts for the review-loop workflow.
+
+Current active work state:
+
+- WorkSession: `ws2` Phase 3.6-3.8 real-use validation.
+- Codex item: `wi3`, still `todo` in the store.
+- Claude Code item: `wi4`, still `todo` in the store.
+- Decision: `dr2`, still open.
+
+Interpretation:
+
+The local orchestrator mechanics are working, but the store does not yet contain linked real AgentRuns for `wi3` / `wi4`. This means the product loop is ready for manual field use, but the current session should not be described as a completed real agent run until Codex and Claude Code events are linked with `work.js item link`.
+
+Next validation step:
+
+1. Run a real Codex task from the generated Codex prompt.
+2. Run a real Claude Code review from the generated Claude prompt.
+3. Use `work status` to find unassigned AgentRuns.
+4. Link them to `wi3` and `wi4`.
+5. Resolve `dr2`.
+6. Re-run `work summary --notify` and ask CC/Fable to review the generated summary.
