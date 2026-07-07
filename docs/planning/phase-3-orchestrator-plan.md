@@ -185,7 +185,34 @@ store 和 CLI 都是低风险的纯增量。
 | R5 | orchestrator 滑向第二个项目管理工具（过度设计） | P1 | 护栏：每个 CLI 命令必须在两周真实使用中被用到，否则删除；state 文件 >1MB 视为设计错误 |
 | R6 | 隐私面扩大：事件日志持久化 | P1 | 只存协议事件（已脱敏）；文档写明位置与删除方式；启用 relay 即知情同意，不做暗中记录。验证：对日志跑与 adapter 相同的泄漏标记检查 |
 
-## 10. Phase 3.0 结论
+## 10. Phase 3.1 实现记录（2026-07-07）
+
+Phase 3.1（relay + local store）已实现并验证，交付物在 `orchestrator/`：
+
+| 文件 | 内容 |
+| --- | --- |
+| `relay.js` | 透明中继（4175→4174）：字节级原样转发、先应答后异步转发（上游延迟与 pet 状态解耦）、64KB 上限、Origin 头 403、回环自检（`SN_RELAY_PET_PORT` 与监听端口相同拒绝启动）、uncaught 兜底不死 |
+| `event-log.js` | 按天 JSONL 追加（`.supernono/events-YYYYMMDD.jsonl`，已 gitignore），`append()` 永不 throw |
+| `health-check.js` | relay/pet/转发路径/数据目录/回环配置五项检查，pet 缺席为 WARN 非 FAIL |
+| `relay-fixture-test.js` | 22 项断言：3 个透明转发用例（含未知字段与 key 顺序保持）、4 个校验拒绝用例、pet-down 行为（ok 应答 <5ms、计数、无崩溃）、日志卫生（行结构恰为 `{at,envelope,forward}`、无 HTTP 头泄漏） |
+| `README.md` | 三条契约、启动方式、env 说明、已知限制 |
+
+验证结果：
+
+- fixture 测试 **22/22 PASS**；`node --check` 全过。
+- 真实端到端：pet + relay 同时运行，双 agent 仿真脚本以
+  `SUPERNONO_BRIDGE_PORT=4175` 投递 **7/7**，relay counters
+  `received=7 forwarded=7 missed=0 rejected=0`，pet renderer 零报错，
+  行为与直连 4174 一致；JSONL 逐条含 envelope+forward，敏感关键词扫描 0 命中。
+- 实现期发现并修复：Node 19+ 默认 keep-alive 连接池会复用被 413 用例销毁的
+  socket（测试客户端加 `agent:false`）；`port:0` 临时端口被 `||` 默认值吞掉
+  （改显式 `!== undefined` 判断）。均为测试/选项处理问题，转发语义无改动。
+
+尚未做（留给 3.2+）：`workbench-state.json` 与 `work status` CLI（3.1 原计划
+含只读 CLI，实际交付把它并入 3.2 与 WorkItem 一起做，避免先造一个没有数据
+模型消费者的空壳命令）；health-check 与 Phase 2.5 adapter health-check 的整合。
+
+## 11. Phase 3.0 结论
 
 1. Orchestrator MVP = **记账员 + 中继站 + 发言人**，不是调度器：不 spawn agent、
    不自动分解、不自动授权。

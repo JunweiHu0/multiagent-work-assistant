@@ -6,6 +6,9 @@ adapters/**/probe-observed.jsonl
 adapters/**/probe-fixture-output.jsonl
 adapters/**/*.local.json
 
+# brain relay runtime event logs (machine-local, never commit)
+.supernono/
+
 # local tooling / editor state
 .claude/
 .obsidian/

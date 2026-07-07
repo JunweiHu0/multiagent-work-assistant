@@ -31,14 +31,21 @@
 - ✅ **Phase 2.7 已完成**（2026-07-07，用户真实环境确认）：install → health-check →
   live hook（真实 Claude Code 会话驱动桌宠）→ uninstall → 恢复 全链路跑通，
   adapter 可在新项目与真实项目中低成本重复接入。Phase 2 全部收口。
-- 🔄 **Phase 3.0 当前目标**：orchestrator 方案设计与最小架构落地（只出设计文档，
-  不实现代码）。设计文档：`docs/planning/phase-3-orchestrator-plan.md`。
-  核心决策：orchestrator MVP = 记账员+中继站+发言人（不 spawn agent、不自动
-  分解、不自动授权）；event relay（adapter→4175→4174）让 pet 与 adapter 零改动；
-  orchestrator 以 `agent:"assistant"` 身份走 signal protocol 向 pet 汇报。
-- 后续入口：**Phase 3.1** 本地 WorkSession store + relay → **Phase 3.2** 手动
-  WorkItem + 分配 agent → **Phase 3.3** 从事件流生成用户摘要（拆分与验收标准
-  见设计文档 §8）。
+- ✅ **Phase 3.0 已完成**：orchestrator 设计文档
+  `docs/planning/phase-3-orchestrator-plan.md`（记账员+中继站+发言人、relay
+  架构、四对象数据模型、3.1-3.3 拆分）。
+- ✅ **Phase 3.1 已完成**（2026-07-07）：brain relay + 本地事件记录落地，
+  `orchestrator/`（relay.js / event-log.js / health-check.js /
+  relay-fixture-test.js / README.md）。fixture 22/22；真实端到端：双 agent
+  仿真经 `SUPERNONO_BRIDGE_PORT=4175` 投递 7/7、逐字节透明、pet 行为与直连
+  一致、JSONL 只含 envelope+forward。实现记录见设计文档 §10。
+- 🔄 **Phase 3.2 当前目标**：手动 WorkItem + 分配 agent。
+  `workbench-state.json` 读写、`work new/add/assign/link/status/decide/done`
+  CLI、AgentRun 从 relay 事件流自动建立（按 `agent:sessionId` 归组）、未关联
+  run 提示。验收：一次真实双 agent 工作被完整记录，`work status` 能如实回答
+  "现在到哪了、谁在等我"（设计文档 §8）。
+- 后续：**Phase 3.3** 从事件流生成用户摘要（`work summary` → Markdown +
+  assistant 身份向 pet 汇报）。
 - ⛔ 仍明确不在本阶段：`Notification -> permission_required`（桌面版实测未触发该
   hook，待新证据）、`permission_resolved` 合成、`PostToolUse -> error`、`testPass`
   能量规则；云端 / 账号 / 数据库 / 自动授权 / 读取 prompt 与 transcript 正文。
