@@ -1,7 +1,7 @@
 # Claude Code Adapter 事件映射设计（Phase 2.2 蓝图）
 
 - 日期：2026-07-06
-- 状态：**Phase 2.2 蓝图**——Bash/Read/Write/Stop 已有真实 probe 依据；Notification 与失败态仍待补测
+- 状态：**Phase 2.6 已收口到语义门**——Bash/Read/Write/Stop 已上线；Notification、失败态、testPass 仍需真实结构化 payload 才能接入 live hooks
 - 目标协议：unified signal protocol（当前 v0.1.0，实现时按
   [v0.2 计划](../architecture/signal-protocol-v0.2-plan.md) 对齐）
 - 参照实现：codex-task-pet `plugins/supernono-codex/hooks/lib.js`（分类与脱敏
@@ -95,3 +95,11 @@ adapters/claude-code/
 4. 泄漏自检：跑一个含假密钥的命令，桥接收到的 payload 里不出现密钥明文。
 5. Codex + Claude Code 并发时（可用 manual test 模拟 Codex 侧），两张卡片
    归属正确，attention 切换符合 Phase 1 规则。
+
+## 7. Phase 2.6 语义门
+
+Phase 2.6 新增 `adapters/claude-code/semantic-gates.js` 与 `semantic-gates-test.js`。这些 gate 只定义未来接入 `permission_required`、`error`、`testPass` 的准入条件，当前不接入 live hooks。
+
+准入原则：只能使用结构化、非正文小字段，例如 `exit_code`、`success`、`ok`、`is_error`、稳定 status enum，或明确的 structured notification type。禁止从 stdout/stderr 正文、prompt、源码、diff、transcript、last assistant message 推断状态。
+
+详见 [phase-2-6-semantic-gates.md](phase-2-6-semantic-gates.md)。

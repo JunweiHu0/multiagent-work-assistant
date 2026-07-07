@@ -51,6 +51,39 @@
 4. 裸 `node` 已经 probe 实测可在 hook 环境解析（Windows，CLI 与桌面版两个表面）；
    如你的环境特殊，把 `command` 里的 `node` 换成 node.exe 绝对路径。
 
+
+### 脚本安装（Phase 2.5）
+
+也可以用安装脚本写入项目级或用户级 settings。脚本会先备份已有 `settings.json`，并且重复运行不会生成重复 hook。
+
+```cmd
+# 项目级安装：写入当前目录的 .claude\settings.json
+node adapters\claude-code\install.js
+
+# 指定项目目录
+node adapters\claude-code\install.js --project C:\path\to\your-project
+
+# 用户级安装：写入 %USERPROFILE%\.claude\settings.json
+node adapters\claude-code\install.js --user
+
+# 如果 hook 环境找不到裸 node，可指定 node.exe
+node adapters\claude-code\install.js --project C:\path\to\your-project --node C:\PROGRA~1\nodejs\node.exe
+```
+
+卸载：
+
+```cmd
+node adapters\claude-code\uninstall.js --project C:\path\to\your-project
+```
+
+健康检查：
+
+```cmd
+node adapters\claude-code\health-check.js --project C:\path\to\your-project
+```
+
+`health-check.js` 会检查 Node、adapter 文件、settings hooks、重复 hook，以及 SuperNoNo 本地桥 `/health`。桌宠未启动时 bridge 项只会是 WARN，不影响 adapter 安装判断。
+
 ## 测试
 
 ```powershell
@@ -75,3 +108,13 @@ node adapters/claude-code/manual-fixture-test.js       # 应输出 ALL PASS
 每次工具调用 spawn 一个 node 进程（约 30-80ms，异步于工具本身），PreToolUse
 用 matcher 限定在映射覆盖的十个工具内；send 内部 800ms 超时。probe 期间未观察
 到可感知卡顿。
+
+## Phase 2.6 语义门
+
+`permission_required`、`permission_resolved`、`error`、`testPass` 仍未接入 live hooks。Phase 2.6 新增了可执行的语义准入规则：
+
+```cmd
+node adapters\claude-code\semantic-gates-test.js
+```
+
+说明见 [docs/claude-code/phase-2-6-semantic-gates.md](../../docs/claude-code/phase-2-6-semantic-gates.md)。只有拿到结构化真实 payload 后，才允许把这些语义接入 `lib.js`。

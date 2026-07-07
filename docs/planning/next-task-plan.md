@@ -3,7 +3,7 @@
 - 日期：2026-07-06
 - 主仓库：`multiagent-work-assistant`
 - 关联显示层仓库：`codex-task-pet`
-- 当前阶段：Phase 2.2.0 adapter MVP 已完成并通过真实测试，当前进行 **Phase 2.3 双 agent 并发验收**
+- 当前阶段：Phase 2.5/2.6 已完成工具化收口，下一步进入真实语义补测或 Phase 2.7 运维验证
 - 本文目的：在上下文 compact 或换电脑后，继续按本文推进，不依赖聊天历史。
 
 ---
@@ -24,7 +24,7 @@
   验收文档 `docs/acceptance/phase-2-3-dual-agent-acceptance.md` + 仿真脚本
   `adapters/shared/manual-realistic-dual-agent-test.js` 已就绪；仿真层已通过
   （pet 端断言 19/19、真实桌宠投递 7/7、旧 manual-multiagent-test 9/9 不受影响、
-  未发现 pet 端 multiagent bug）；**真实层人工并发测试待执行**（验收文档 §3）。
+  未发现 pet 端 multiagent bug）；**真实层人工并发测试已由用户确认通过**（验收文档 §3）。
 - ⛔ 仍明确不在本阶段：`Notification -> permission_required`（桌面版实测未触发该
   hook，待新证据）、`permission_resolved` 合成、`PostToolUse -> error`、`testPass`
   能量规则。
@@ -424,3 +424,40 @@ Phase 2.3 成功标志：
 - 全部结束后桌宠回 idle/resting。
 
 完成这些后，再进入 Phase 2.4。
+
+---
+
+## 13. Phase 2.5 / 2.6 收口记录（2026-07-06）
+
+Phase 2.5 已完成：Claude Code adapter 增加安装、卸载、健康检查和 fixture 测试。
+
+新增：
+
+```text
+adapters/claude-code/settings-utils.js
+adapters/claude-code/install.js
+adapters/claude-code/uninstall.js
+adapters/claude-code/health-check.js
+adapters/claude-code/install-fixture-test.js
+```
+
+常用命令：
+
+```cmd
+node adapters\claude-code\install.js --project C:\path\to\project
+node adapters\claude-code\health-check.js --project C:\path\to\project
+node adapters\claude-code\uninstall.js --project C:\path\to\project
+node adapters\claude-code\install-fixture-test.js
+```
+
+Phase 2.6 已完成安全准入层：
+
+```text
+adapters/claude-code/semantic-gates.js
+adapters/claude-code/semantic-gates-test.js
+docs/claude-code/phase-2-6-semantic-gates.md
+```
+
+重要结论：`permission_required`、`permission_resolved`、`error`、`testPass` 仍不接入 live hooks，直到真实 probe 捕获到稳定结构化字段。当前完成的是可执行的准入规则，防止未来靠 stdout/stderr/prompt/source/diff/transcript 误判。
+
+下一步建议：Phase 2.7 先跑真实安装/健康检查，再做 Notification 与失败态专项 probe；只有拿到结构化字段后，才逐个启用 2.6 语义映射。
