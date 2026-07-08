@@ -243,3 +243,36 @@ Test:
 ```powershell
 node orchestrator/phase4-fixture-test.js
 ```
+
+## Phase 5 Python Brain Layer
+
+Phase 5 adds a narrow Python brain spike while keeping the Node.js local device layer intact.
+
+```powershell
+# If Python is not globally available:
+$env:SN_PYTHON = "C:\Users\1\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
+
+node orchestrator/work.js brain check
+node orchestrator/work.js brain plan "Implement feature X" --goal "Codex builds, Claude reviews, user decides"
+node orchestrator/work.js plan accept .supernono/plans/brain-plan-xxx.json
+node orchestrator/work.js prompt pack ws1
+```
+
+`brain-python/planner.py` reads metadata-only JSON from stdin and writes a `supernono.planDraft.v1` JSON draft to stdout. It is deterministic, dependency-free, and does not call an LLM. It does not read prompt, transcript, source body, diff, tool output, token, or secret data.
+
+Boundary:
+
+- Node.js remains responsible for hooks, relay, CLI, and Electron-facing local integration.
+- Python is reserved for future planner/evaluator/memory/RAG/heavier orchestration logic.
+- Python runs only when the user invokes `brain plan`; it is not in hook hot paths.
+
+Docs:
+
+- `docs/planning/phase-5-python-brain-spike.md`
+- `docs/acceptance/phase-5-python-brain-acceptance.md`
+
+Test:
+
+```powershell
+node orchestrator/brain-fixture-test.js
+```

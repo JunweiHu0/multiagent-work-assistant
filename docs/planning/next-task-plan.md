@@ -1040,3 +1040,49 @@ Validation completed:
 Python decision: do not rewrite now. Keep Node.js for hooks / relay / CLI / Electron-facing local tooling. Revisit Python only for planner/evaluator/memory/RAG components, via JSON boundaries, after the deterministic planner proves insufficient.
 
 Next after Phase 4: run the acceptance checklist on one real feature, then ask CC/Fable to review whether plan draft and prompt pack actually save effort. If yes, Phase 5 should reduce link/status friction before adding any automatic scheduling.
+
+## 23. Phase 5 implementation record (2026-07-08)
+
+Phase 5 implements the Python brain layer spike. This restores the intended architecture split: Node/npm remains the local device and bridge layer; Python becomes an optional deeper brain layer for planner/evaluator/memory/RAG work.
+
+Delivered files:
+
+| File | Purpose |
+| --- | --- |
+| `brain-python/planner.py` | Deterministic dependency-free Python planner; stdin metadata JSON -> `supernono.planDraft.v1` JSON. |
+| `brain-python/README.md` | Python brain boundary and safety notes. |
+| `orchestrator/brain.js` | Node wrapper for Python discovery, metadata-only input construction, draft validation, and writing plan JSON/Markdown. |
+| `orchestrator/brain-fixture-test.js` | Node->Python fixture coverage and leak exclusion. |
+| `docs/planning/phase-5-python-brain-spike.md` | Phase 5 design, commands, boundaries, and validation. |
+| `docs/acceptance/phase-5-python-brain-acceptance.md` | Acceptance checklist and review prompt. |
+
+New CLI:
+
+```cmd
+set SN_PYTHON=C:\Users\1\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe
+node orchestrator\work.js brain check
+node orchestrator\work.js brain plan "实现功能 X" --goal "Codex builds, Claude reviews, user decides"
+```
+
+The generated `brain-plan-*.json` remains compatible with Phase 4:
+
+```cmd
+node orchestrator\work.js plan accept .supernono\plans\brain-plan-xxx.json
+node orchestrator\work.js prompt pack ws1
+```
+
+Validation completed:
+
+- `node --check orchestrator\brain.js`
+- `node --check orchestrator\brain-fixture-test.js`
+- `node --check orchestrator\work.js`
+- `node orchestrator\brain-fixture-test.js` with `SN_PYTHON` set -> ALL PASS
+- temporary CLI smoke: `brain check -> brain plan -> plan accept -> prompt pack -> status`
+
+Boundary preserved:
+
+- Python is not in hooks / relay hot paths.
+- Python sees metadata only, not event payload bodies.
+- No LLM API, no agent spawn, no automatic authorization, no source/diff/transcript/tool-output ingestion.
+
+Next after Phase 5: run the Python brain plan on one real task and ask CC/Fable whether the Python boundary is worth keeping. If yes, Phase 6 can explore an LLM-backed planner or evaluator behind the same JSON contract. If no, keep deterministic planning in Node and optimize link/status/decision friction instead.

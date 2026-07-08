@@ -19,22 +19,24 @@
 - Phase 3.7: Summary v2 handoff format complete.
 - Phase 3.8: Copyable agent prompt generator complete.
 - Phase 4.0-4.6: Semi-automatic brain complete: plan draft, plan accept, prompt pack, decision brief, Python spike conclusion, and real-use checklist.
+- Phase 5.0: Python brain layer spike complete: Node -> Python stdin/stdout planner, metadata-only input, compatible plan draft output.
 
 ## Next Recommended Phase
 
-Run Phase 4 on one real task and review product value:
+Run Phase 5 on one real task and review product value:
 
 1. `node orchestrator/relay.js`
-2. `node orchestrator/work.js plan draft "<task>" --goal "Codex builds, Claude reviews, user decides"`
-3. Review the generated `.supernono/plans/*.md`, then run `node orchestrator/work.js plan accept .supernono/plans/plan-xxx.json`.
+2. `node orchestrator/work.js brain plan "<task>" --goal "Codex builds, Claude reviews, user decides"`
+3. Review the generated `.supernono/plans/*.md`, then run `node orchestrator/work.js plan accept .supernono/plans/brain-plan-xxx.json`.
 4. `node orchestrator/work.js prompt pack ws1`
 5. Copy prompts into Codex and Claude Code manually.
 6. Link runs, generate `decision brief`, resolve the decision, mark items done.
 7. `node orchestrator/work.js summary --notify`
-8. Ask CC/Fable to review the real-use result using `docs/acceptance/phase-4-semi-automatic-brain.md`.
+8. Ask CC/Fable to review the real-use result using `docs/acceptance/phase-5-python-brain-acceptance.md`.
 
-Do not add automatic scheduling until the Phase 4 semi-automatic loop proves useful.
+Do not add automatic scheduling until the Phase 5 Python brain boundary proves useful.
 
 Backlog remains gated: Notification -> permission_required, permission_resolved synthesis, PostToolUse -> error, testPass, LLM-based automatic decomposition, automatic agent spawning, database/cloud/account features.
+
 
 

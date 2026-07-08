@@ -15,6 +15,8 @@
  *   node orchestrator/work.js summary [--out path] [--notify]
  *   node orchestrator/work.js prompt <codex|claude|review-loop|pack> [itemId|sessionId] [--out path]
  *   node orchestrator/work.js plan draft "Feature title" [--goal "..."] [--mode review-loop]
+ *   node orchestrator/work.js brain check [--python path]
+ *   node orchestrator/work.js brain plan "Feature title" [--goal "..."] [--python path]
  *   node orchestrator/work.js plan accept <plan.json> [--force]
  *   node orchestrator/work.js decision brief <drId> [--notify]
  *   node orchestrator/work.js status
@@ -181,6 +183,26 @@ async function main() {
       console.log(`OK plan markdown written: ${result.mdPath}`);
       return;
     }
+    if (group === 'brain' && verb === 'check') {
+      const { checkPythonBrain } = require('./brain');
+      const result = checkPythonBrain({ python: flags.python && flags.python !== true ? flags.python : null });
+      console.log(`OK Python brain planner: ${result.draftId}`);
+      return;
+    }
+    if (group === 'brain' && verb === 'plan') {
+      const { writePythonPlanDraft } = require('./brain');
+      const result = writePythonPlanDraft(rest.join(' '), {
+        goal: flags.goal,
+        mode: flags.mode,
+        python: flags.python && flags.python !== true ? flags.python : null,
+        outPath: flags.out && flags.out !== true ? flags.out : null,
+        outDir: flags['out-dir'] && flags['out-dir'] !== true ? flags['out-dir'] : null,
+      });
+      console.log(`OK brain plan draft written: ${result.jsonPath}`);
+      console.log(`OK brain plan markdown written: ${result.mdPath}`);
+      console.log(`  planner: ${result.draft.planner ? result.draft.planner.kind : 'python'}`);
+      return;
+    }
     if (group === 'plan' && verb === 'accept') {
       const { acceptPlan } = require('./phase4');
       const result = acceptPlan(rest[0], { force: !!flags.force });
@@ -226,5 +248,6 @@ async function main() {
 }
 
 main();
+
 
 
