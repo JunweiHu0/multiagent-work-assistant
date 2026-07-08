@@ -12,7 +12,11 @@
  *   node orchestrator/work.js decision add "Accept this plan?" [--item <itemId>]
  *   node orchestrator/work.js decision resolve <drId> <accept|reject|note>
  *   node orchestrator/work.js workflow review-loop "Feature title" [--goal "..."]
- *   node orchestrator/work.js summary [--out path] [--notify]`n *   node orchestrator/work.js prompt <codex|claude|review-loop> [itemId] [--out path]
+ *   node orchestrator/work.js summary [--out path] [--notify]
+ *   node orchestrator/work.js prompt <codex|claude|review-loop|pack> [itemId|sessionId] [--out path]
+ *   node orchestrator/work.js plan draft "Feature title" [--goal "..."] [--mode review-loop]
+ *   node orchestrator/work.js plan accept <plan.json> [--force]
+ *   node orchestrator/work.js decision brief <drId> [--notify]
  *   node orchestrator/work.js status
  */
 const { createWorkStore } = require('./work-store');
@@ -147,12 +151,42 @@ async function main() {
       console.log(`OK decision ${d.id} resolved: ${d.resolution}`);
       return;
     }
+    if (group === 'decision' && verb === 'brief') {
+      const { writeDecisionBrief, sendAssistantDecisionBrief } = require('./phase4');
+      const result = writeDecisionBrief(rest[0], { outPath: flags.out && flags.out !== true ? flags.out : null });
+      console.log(`OK decision brief written: ${result.outPath}`);
+      if (flags.notify) {
+        const sent = await sendAssistantDecisionBrief(result.outPath, result.decision);
+        console.log(sent.ok ? `OK assistant notified port ${sent.port}` : `WARN assistant notify failed on port ${sent.port}: ${sent.error || sent.status}`);
+      }
+      return;
+    }
     if (group === 'workflow' && verb === 'review-loop') {
       const flow = createReviewLoop(rest.join(' '), flags.goal);
       console.log(`OK workflow review-loop created: ${flow.ws.id}`);
       console.log(`  ${flow.build.id} -> codex (${flow.build.title})`);
       console.log(`  ${flow.review.id} -> claude-code (${flow.review.title})`);
       console.log(`  ${flow.decision.id} -> decision (${flow.decision.summary})`);
+      return;
+    }
+    if (group === 'plan' && verb === 'draft') {
+      const { writePlanDraft } = require('./phase4');
+      const result = writePlanDraft(rest.join(' '), {
+        goal: flags.goal,
+        mode: flags.mode,
+        outPath: flags.out && flags.out !== true ? flags.out : null,
+        outDir: flags['out-dir'] && flags['out-dir'] !== true ? flags['out-dir'] : null,
+      });
+      console.log(`OK plan draft written: ${result.jsonPath}`);
+      console.log(`OK plan markdown written: ${result.mdPath}`);
+      return;
+    }
+    if (group === 'plan' && verb === 'accept') {
+      const { acceptPlan } = require('./phase4');
+      const result = acceptPlan(rest[0], { force: !!flags.force });
+      console.log(`OK plan accepted: ${result.ws.id}`);
+      for (const item of result.items) console.log(`  ${item.id} -> ${item.assignedAgent || 'unassigned'} (${item.title})`);
+      for (const d of result.decisions) console.log(`  ${d.id} -> decision (${d.summary})`);
       return;
     }
     if (group === 'summary') {
@@ -163,6 +197,13 @@ async function main() {
         const sent = await sendAssistantSummary(result.outPath);
         console.log(sent.ok ? `OK assistant notified port ${sent.port}` : `WARN assistant notify failed on port ${sent.port}: ${sent.error || sent.status}`);
       }
+      return;
+    }
+    if (group === 'prompt' && verb === 'pack') {
+      const { writePromptPack } = require('./phase4');
+      const result = writePromptPack(rest[0], { outDir: flags['out-dir'] && flags['out-dir'] !== true ? flags['out-dir'] : null });
+      console.log(`OK prompt pack written: ${result.outDir}`);
+      for (const f of result.files) console.log(`  ${f.kind}: ${f.path}`);
       return;
     }
     if (group === 'prompt') {
@@ -185,4 +226,5 @@ async function main() {
 }
 
 main();
+
 

@@ -1005,3 +1005,38 @@ Phase 5 才考虑更激进的能力：
 ```
 
 一句话：Phase 4 的目标是把 brain 从“记录员”升级成“会给计划草稿和决策摘要的助理”，但仍然让用户握着方向盘。
+
+## 22. Phase 4 implementation record (2026-07-08)
+
+Phase 4 is implemented as a conservative semi-automatic brain. It suggests and packages work, but still does not spawn agents, call an LLM API, auto-authorize tools, or ingest prompt/transcript/source/diff/tool-output bodies.
+
+Delivered files:
+
+| File | Purpose |
+| --- | --- |
+| `orchestrator/phase4.js` | Plan draft, plan accept, prompt pack, decision brief, and assistant decision notification. |
+| `orchestrator/phase4-fixture-test.js` | Fixture coverage for draft/accept/pack/brief and leak exclusion. |
+| `docs/planning/phase-4-brain-plan.md` | Phase 4 design, usage, and Python spike conclusion. |
+| `docs/acceptance/phase-4-semi-automatic-brain.md` | Real-use acceptance checklist and review prompt. |
+| `orchestrator/README.md` | Phase 4 usage section. |
+
+New CLI:
+
+```cmd
+node orchestrator\work.js plan draft "实现功能 X" --goal "Codex builds, Claude reviews, user decides"
+node orchestrator\work.js plan accept .supernono\plans\plan-xxx.json
+node orchestrator\work.js prompt pack ws1
+node orchestrator\work.js decision brief dr1 --notify
+```
+
+Validation completed:
+
+- `node --check orchestrator\phase4.js`
+- `node --check orchestrator\phase4-fixture-test.js`
+- `node --check orchestrator\work.js`
+- `node orchestrator\phase4-fixture-test.js` -> ALL PASS
+- temporary CLI smoke: plan draft -> accept -> prompt pack -> decision brief -> status
+
+Python decision: do not rewrite now. Keep Node.js for hooks / relay / CLI / Electron-facing local tooling. Revisit Python only for planner/evaluator/memory/RAG components, via JSON boundaries, after the deterministic planner proves insufficient.
+
+Next after Phase 4: run the acceptance checklist on one real feature, then ask CC/Fable to review whether plan draft and prompt pack actually save effort. If yes, Phase 5 should reduce link/status friction before adding any automatic scheduling.

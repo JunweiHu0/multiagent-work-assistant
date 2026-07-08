@@ -18,19 +18,23 @@
 - Phase 3.6: Real-use acceptance checklist complete.
 - Phase 3.7: Summary v2 handoff format complete.
 - Phase 3.8: Copyable agent prompt generator complete.
+- Phase 4.0-4.6: Semi-automatic brain complete: plan draft, plan accept, prompt pack, decision brief, Python spike conclusion, and real-use checklist.
 
 ## Next Recommended Phase
 
-Run the system on one real task and review product value:
+Run Phase 4 on one real task and review product value:
 
 1. `node orchestrator/relay.js`
-2. `node orchestrator/work.js workflow review-loop "<task>" --goal "..."`
-3. `node orchestrator/work.js prompt review-loop`
-4. Copy prompts into Codex and Claude Code manually.
-5. Link runs, resolve the decision, mark items done.
-6. `node orchestrator/work.js summary --notify`
-7. Ask CC/Fable to review the real-use result using `docs/acceptance/phase-3-6-real-use.md`.
+2. `node orchestrator/work.js plan draft "<task>" --goal "Codex builds, Claude reviews, user decides"`
+3. Review the generated `.supernono/plans/*.md`, then run `node orchestrator/work.js plan accept .supernono/plans/plan-xxx.json`.
+4. `node orchestrator/work.js prompt pack ws1`
+5. Copy prompts into Codex and Claude Code manually.
+6. Link runs, generate `decision brief`, resolve the decision, mark items done.
+7. `node orchestrator/work.js summary --notify`
+8. Ask CC/Fable to review the real-use result using `docs/acceptance/phase-4-semi-automatic-brain.md`.
 
-Do not add automatic scheduling until the manual loop proves useful.
+Do not add automatic scheduling until the Phase 4 semi-automatic loop proves useful.
 
-Backlog remains gated: Notification -> permission_required, permission_resolved synthesis, PostToolUse -> error, testPass, automatic task decomposition, automatic agent spawning, database/cloud/account features.
+Backlog remains gated: Notification -> permission_required, permission_resolved synthesis, PostToolUse -> error, testPass, LLM-based automatic decomposition, automatic agent spawning, database/cloud/account features.
+
+

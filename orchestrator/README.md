@@ -212,3 +212,34 @@ node orchestrator/summary-fixture-test.js
 node orchestrator/prompt-fixture-test.js
 node orchestrator/workflow-fixture-test.js
 ```
+
+## Phase 4 Semi-Automatic Brain
+
+Phase 4 adds conservative brain helpers on top of the Phase 3 relay/work store. They generate drafts and copyable files, but still do not spawn agents, call LLM APIs, auto-authorize tools, or read prompt/source/diff/transcript/tool-output bodies.
+
+```powershell
+node orchestrator/work.js plan draft "Implement feature X" --goal "Codex builds, Claude reviews, user decides"
+node orchestrator/work.js plan accept .supernono/plans/plan-xxx.json
+node orchestrator/work.js prompt pack ws1
+node orchestrator/work.js decision brief dr1 --notify
+```
+
+Outputs are written under `.supernono/plans/`, `.supernono/prompts/<sessionId>/`, and `.supernono/briefs/`.
+
+Implemented pieces:
+
+- `plan draft`: deterministic review-loop draft with Codex build item, Claude review item, and one user decision gate.
+- `plan accept`: converts the draft into WorkSession / WorkItems / DecisionRequest and marks the draft accepted.
+- `prompt pack`: writes per-agent prompts plus a user checklist.
+- `decision brief`: writes a metadata-only decision note; `--notify` sends an assistant/workbench `permission_required` signal to the pet.
+
+Docs:
+
+- `docs/planning/phase-4-brain-plan.md`
+- `docs/acceptance/phase-4-semi-automatic-brain.md`
+
+Test:
+
+```powershell
+node orchestrator/phase4-fixture-test.js
+```
