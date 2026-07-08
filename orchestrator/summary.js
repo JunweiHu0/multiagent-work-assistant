@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 /*
  * summary.js - Phase 3.7 user-facing work summary v2.
  *
@@ -10,11 +10,10 @@
  */
 const fs = require('fs');
 const path = require('path');
-const http = require('http');
 const { createWorkStore } = require('./work-store');
+const { assistantEvent, sendWorkbenchSignal } = require('./workbench-signal');
 
 const DEFAULT_DIR = path.join(__dirname, '..', '.supernono');
-const SEND_TIMEOUT_MS = 800;
 
 function dataDir(dirOverride) { return dirOverride || process.env.SN_BRAIN_DATA_DIR || DEFAULT_DIR; }
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -87,7 +86,9 @@ function addItemGroup(lines, title, status, items) {
 
 function nextActions(status, items) {
   const out = [];
-  for (const d of status.openDecisions) out.push(`Resolve decision ${d.id}: ${safeText(d.summary, 180)}`);
+  const itemIds = new Set((items || []).map((i) => i.id));
+  const openDecisions = status.openDecisions.filter((d) => !d.workItemId || itemIds.has(d.workItemId));
+  for (const d of openDecisions) out.push(`Resolve decision ${d.id}: ${safeText(d.summary, 180)}`);
   for (const item of items.filter((i) => i.status === 'waiting_user')) out.push(`Unblock ${item.id}: ${safeText(item.title, 140)}`);
   if (status.unassignedRuns.length) out.push(`Link ${status.unassignedRuns.length} unassigned AgentRun(s) to WorkItems.`);
   for (const item of items.filter((i) => i.status === 'in_progress')) out.push(`Check progress on ${item.id}: ${safeText(item.title, 140)}`);
@@ -98,6 +99,10 @@ function nextActions(status, items) {
 function renderSummary(status, logStats, generatedAt) {
   const ws = status.activeSession || status.sessions[status.sessions.length - 1] || null;
   const items = ws ? status.items.filter((i) => i.sessionId === ws.id) : status.items;
+  const itemIds = new Set(items.map((i) => i.id));
+  const linkedRuns = status.runs.filter((r) => r.workItemId && itemIds.has(r.workItemId));
+  const sessionDecisions = status.decisions.filter((d) => !ws || !d.workItemId || itemIds.has(d.workItemId));
+  const openDecisions = sessionDecisions.filter((d) => !d.resolvedAt);
   const completed = items.filter((i) => i.status === 'done');
   const active = items.filter((i) => i.status === 'in_progress');
   const waiting = items.filter((i) => i.status === 'waiting_user');
@@ -112,8 +117,8 @@ function renderSummary(status, logStats, generatedAt) {
   lines.push('- Session: ' + (ws ? `${ws.id} [${ws.status}] ${safeText(ws.title, 160)}` : 'none'));
   if (ws && ws.goal) lines.push('- Goal: ' + safeText(ws.goal, 300));
   lines.push(`- Items: done=${completed.length}, active=${active.length}, waiting=${waiting.length}, todo=${todo.length}, dropped=${dropped.length}`);
-  lines.push(`- Runs: linked=${status.runs.length - status.unassignedRuns.length}, unassigned=${status.unassignedRuns.length}`);
-  lines.push(`- Decisions: open=${status.openDecisions.length}, total=${status.decisions.length}`);
+  lines.push(`- Runs: linked_in_session=${linkedRuns.length}, unassigned_global=${status.unassignedRuns.length}`);
+  lines.push(`- Decisions: open=${openDecisions.length}, total=${sessionDecisions.length}`);
   lines.push(`- Relay today: total=${logStats.total}, forwarded=${logStats.forwarded}, missed=${logStats.missed}`);
   lines.push('');
 
@@ -141,8 +146,8 @@ function renderSummary(status, logStats, generatedAt) {
   lines.push('');
 
   lines.push('## Open Decisions');
-  if (!status.openDecisions.length) lines.push('- None.');
-  for (const d of status.openDecisions) lines.push(`- ${d.id} ${safeText(d.summary, 240)}${d.workItemId ? ' (item ' + d.workItemId + ')' : ''}`);
+  if (!openDecisions.length) lines.push('- None.');
+  for (const d of openDecisions) lines.push(`- ${d.id} ${safeText(d.summary, 240)}${d.workItemId ? ' (item ' + d.workItemId + ')' : ''}`);
   lines.push('');
 
   lines.push('## Files');
@@ -173,27 +178,13 @@ function writeSummary(options) {
 }
 
 function sendAssistantSummary(outPath, options) {
-  options = options || {};
-  const port = Number(options.port || process.env.SN_SUMMARY_NOTIFY_PORT || process.env.SN_BRAIN_PORT || process.env.SUPERNONO_BRIDGE_PORT || 4175);
-  const event = {
-    type: 'completed', agent: 'assistant', adapter: 'workbench', sessionId: 'workbench', taskId: null,
-    payload: {
-      action: 'SuperNoNo work summary generated',
-      artifact: outPath,
-      artifacts: [{ title: 'Work summary', path: outPath }],
-      source: 'workbench-summary',
-    },
-  };
-  const raw = JSON.stringify(event);
-  return new Promise((resolve) => {
-    const req = http.request({ host: '127.0.0.1', port, path: '/signal', method: 'POST', timeout: SEND_TIMEOUT_MS,
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(raw) } },
-    (res) => { res.resume(); res.on('end', () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, port })); });
-    req.on('error', (err) => resolve({ ok: false, port, error: String((err && (err.code || err.message)) || 'error').slice(0, 80) }));
-    req.on('timeout', () => { req.destroy(); resolve({ ok: false, port, error: 'timeout' }); });
-    req.write(raw);
-    req.end();
+  const event = assistantEvent('completed', {
+    action: 'SuperNoNo work summary generated',
+    artifact: outPath,
+    artifacts: [{ title: 'Work summary', path: outPath }],
+    source: 'workbench-summary',
   });
+  return sendWorkbenchSignal(event, options || {});
 }
 
 async function main() {

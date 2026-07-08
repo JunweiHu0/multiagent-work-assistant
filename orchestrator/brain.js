@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 /*
  * brain.js - Node <-> Python brain boundary (Phase 5 spike).
  *
@@ -102,9 +102,17 @@ function runPythonPlanner(input, options) {
     }
     let draft;
     try { draft = JSON.parse(res.stdout); }
-    catch (e) { throw new Error(`${c.label}: invalid JSON from Python planner: ${e.message}`); }
-    draft.python = { command: c.command, label: c.label, script: path.relative(path.join(__dirname, '..'), options.script || PLANNER).replace(/\\/g, '/') };
-    return validateDraft(draft);
+    catch (e) {
+      errors.push(`${c.label}: invalid JSON from Python planner: ${e.message}`);
+      continue;
+    }
+    try {
+      draft.python = { command: c.command, label: c.label, script: path.relative(path.join(__dirname, '..'), options.script || PLANNER).replace(/\\/g, '/') };
+      return validateDraft(draft);
+    } catch (e) {
+      errors.push(`${c.label}: ${e.message}`);
+      continue;
+    }
   }
 
   throw new Error('Python planner failed. Tried: ' + errors.join('; '));

@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 /*
  * work.js - manual work bookkeeping CLI (Phase 3.2+).
  *
@@ -10,7 +10,7 @@
  *   node orchestrator/work.js item link <itemId> <agent:sessionId | runId>
  *   node orchestrator/work.js item done <itemId>
  *   node orchestrator/work.js decision add "Accept this plan?" [--item <itemId>]
- *   node orchestrator/work.js decision resolve <drId> <accept|reject|note>
+ *   node orchestrator/work.js decision resolve <drId> <accept|reject|note> [--no-notify]
  *   node orchestrator/work.js workflow review-loop "Feature title" [--goal "..."]
  *   node orchestrator/work.js summary [--out path] [--notify]
  *   node orchestrator/work.js prompt <codex|claude|review-loop|pack> [itemId|sessionId] [--out path]
@@ -149,8 +149,13 @@ async function main() {
       return;
     }
     if (group === 'decision' && verb === 'resolve') {
+      const { sendAssistantDecisionResolved } = require('./phase4');
       const d = store.resolveDecision(rest[0], rest[1]);
       console.log(`OK decision ${d.id} resolved: ${d.resolution}`);
+      if (!flags['no-notify']) {
+        const sent = await sendAssistantDecisionResolved(d);
+        console.log(sent.ok ? `OK assistant resolved port ${sent.port}` : `WARN assistant resolve notify failed: ${sent.error || sent.status}`);
+      }
       return;
     }
     if (group === 'decision' && verb === 'brief') {

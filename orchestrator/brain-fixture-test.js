@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 /* Phase 5 fixture test: Node -> Python planner boundary. */
 const fs = require('fs');
 const os = require('os');
@@ -46,6 +46,19 @@ check(mdBody.includes('# SuperNoNo Plan Draft'), 'written Markdown reuses plan r
 check(!jsonBody.includes('SECRET_SHOULD_NOT_APPEAR'), 'written JSON excludes sensitive payload marker');
 check(!mdBody.includes('SECRET_SHOULD_NOT_APPEAR'), 'written Markdown excludes sensitive payload marker');
 
-console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
+const originalSnPython = process.env.SN_PYTHON;
+const originalPython = process.env.PYTHON;
+const badCmd = path.join(dir, 'bad-json-python.cmd');
+fs.writeFileSync(badCmd, '@echo off\r\necho not-json\r\n', 'utf8');
+try {
+  process.env.SN_PYTHON = badCmd;
+  process.env.PYTHON = python;
+  const fallbackDraft = runPythonPlanner(input, {});
+  check(fallbackDraft.schema === 'supernono.planDraft.v1', 'bad JSON Python candidate falls through to next candidate');
+} finally {
+  if (originalSnPython === undefined) delete process.env.SN_PYTHON; else process.env.SN_PYTHON = originalSnPython;
+  if (originalPython === undefined) delete process.env.PYTHON; else process.env.PYTHON = originalPython;
+}
+console.log('\\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
 process.exit(failures === 0 ? 0 : 1);
 

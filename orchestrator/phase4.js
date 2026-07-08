@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 /*
  * phase4.js - semi-automatic brain helpers.
  *
@@ -9,12 +9,11 @@
  */
 const fs = require('fs');
 const path = require('path');
-const http = require('http');
 const { createWorkStore } = require('./work-store');
+const { assistantEvent, sendWorkbenchSignal } = require('./workbench-signal');
 const { renderCodexPrompt, renderClaudePrompt } = require('./prompt');
 
 const DEFAULT_DIR = path.join(__dirname, '..', '.supernono');
-const SEND_TIMEOUT_MS = 800;
 
 function dataDir(dirOverride) { return dirOverride || process.env.SN_BRAIN_DATA_DIR || DEFAULT_DIR; }
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -315,30 +314,38 @@ function writeDecisionBrief(decisionId, options) {
 }
 
 function sendAssistantDecisionBrief(outPath, decision, options) {
-  options = options || {};
-  const port = Number(options.port || process.env.SN_SUMMARY_NOTIFY_PORT || process.env.SN_BRAIN_PORT || process.env.SUPERNONO_BRIDGE_PORT || 4175);
-  const event = {
-    type: 'permission_required', agent: 'assistant', adapter: 'workbench', sessionId: 'workbench', taskId: decision.id,
-    payload: {
-      action: 'Decision needed: ' + safeText(decision.summary, 120),
-      decisionId: decision.id,
-      artifact: outPath,
-      artifacts: [{ title: 'Decision brief ' + decision.id, path: outPath }],
-      source: 'workbench-decision-brief',
-    },
-  };
-  const raw = JSON.stringify(event);
-  return new Promise((resolve) => {
-    const req = http.request({ host: '127.0.0.1', port, path: '/signal', method: 'POST', timeout: SEND_TIMEOUT_MS,
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(raw) } },
-    (res) => { res.resume(); res.on('end', () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, port })); });
-    req.on('error', (err) => resolve({ ok: false, port, error: String((err && (err.code || err.message)) || 'error').slice(0, 80) }));
-    req.on('timeout', () => { req.destroy(); resolve({ ok: false, port, error: 'timeout' }); });
-    req.write(raw);
-    req.end();
-  });
+  const event = assistantEvent('permission_required', {
+    action: 'Decision needed: ' + safeText(decision.summary, 120),
+    command: 'Resolve decision ' + decision.id,
+    decisionId: decision.id,
+    artifact: outPath,
+    artifacts: [{ title: 'Decision brief ' + decision.id, path: outPath }],
+    source: 'workbench-decision-brief',
+  }, { taskId: decision.id });
+  return sendWorkbenchSignal(event, options || {});
 }
 
+async function sendAssistantDecisionResolved(decision, options) {
+  options = options || {};
+  const approved = decision && decision.resolution === 'accept';
+  const resolved = await sendWorkbenchSignal(assistantEvent('permission_resolved', {
+    action: 'Decision resolved: ' + safeText(decision && decision.summary, 120),
+    approved,
+    resolution: decision && decision.resolution,
+    decisionId: decision && decision.id,
+    source: 'workbench-decision-resolve',
+  }, { taskId: decision && decision.id }), options);
+  // Close the lifecycle with a settle event. Without it the pet keeps the
+  // assistant entry in its previous visual state forever (a resumePhase would
+  // park it in an eternal "thinking" — working states never decay; and with
+  // no resumePhase the visual stays waiting_approval). turn_ended settles the
+  // assistant back to idle so it stops holding pet focus after the decision.
+  await sendWorkbenchSignal(assistantEvent('turn_ended', {
+    action: 'Workbench decision flow finished',
+    source: 'workbench-decision-resolve',
+  }, { taskId: decision && decision.id }), options);
+  return resolved;
+}
 module.exports = {
   buildPlanDraft,
   writePlanDraft,
@@ -349,4 +356,5 @@ module.exports = {
   renderDecisionBrief,
   writeDecisionBrief,
   sendAssistantDecisionBrief,
+  sendAssistantDecisionResolved,
 };
