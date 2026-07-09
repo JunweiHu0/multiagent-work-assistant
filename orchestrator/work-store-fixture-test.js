@@ -87,7 +87,32 @@ threw = false;
 try { store.resolveDecision('dr1', 'accept'); } catch (_) { threw = true; }
 check(threw, 'double-resolve rejected');
 
-console.log('\n-- 8. corruption safety: never silently overwrite --');
+console.log('\n-- 8. auto-link plan and execution --');
+const autoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-autolink-test-'));
+const autoStore = createWorkStore(autoDir);
+autoStore.startSession('Auto link smoke', 'Match unassigned runs to assigned items');
+autoStore.addItem('Codex build target', { role: 'build' });
+autoStore.assignItem('wi1', 'codex');
+autoStore.ingestEvent({ type: 'command_running', agent: 'codex', sessionId: 'codex-auto', payload: {} });
+let plan = autoStore.getAutoLinkPlan();
+check(plan.length === 1 && plan[0].candidates.length === 1 && plan[0].candidates[0].id === 'wi1', 'auto-link plan finds the unique matching item');
+let auto = autoStore.autoLinkRuns();
+check(auto.linked.length === 1 && auto.linked[0].item.id === 'wi1' && auto.linked[0].run.id === 'ar1', 'auto-link links unique match');
+check(autoStore.getStatus().runs.find((x) => x.id === 'ar1').workItemId === 'wi1', 'auto-linked run is attached');
+autoStore.addItem('Claude review A', { role: 'review' });
+autoStore.assignItem('wi2', 'claude-code');
+autoStore.addItem('Claude review B', { role: 'review' });
+autoStore.assignItem('wi3', 'claude-code');
+autoStore.ingestEvent({ type: 'command_running', agent: 'claude-code', sessionId: 'cc-ambiguous', payload: {} });
+auto = autoStore.autoLinkRuns();
+check(auto.ambiguous.length === 1 && auto.ambiguous[0].candidates.length === 2, 'auto-link reports multiple candidates as ambiguous');
+check(!autoStore.getStatus().runs.find((x) => x.agentSessionId === 'cc-ambiguous').workItemId, 'ambiguous run is not linked');
+autoStore.ingestEvent({ type: 'command_running', agent: 'generic-cli', sessionId: 'generic-none', payload: {} });
+auto = autoStore.autoLinkRuns();
+check(auto.noCandidates.length === 1 && auto.noCandidates[0].run.agent === 'generic-cli', 'auto-link reports no-candidate run');
+check(!autoStore.getStatus().runs.find((x) => x.agentSessionId === 'generic-none').workItemId, 'no-candidate run is not linked');
+
+console.log('\n-- 9. corruption safety: never silently overwrite --');
 const before = fs.readFileSync(store.filePath, 'utf8');
 fs.writeFileSync(store.filePath, 'this is {{{ not json');
 threw = false;

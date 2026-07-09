@@ -9,10 +9,10 @@ const { createWorkStore } = require('./work-store');
 let failures = 0;
 const check = (c, l) => { console.log((c ? '  PASS  ' : '  FAIL  ') + l); if (!c) failures++; };
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-workflow-test-'));
-function cli(args) {
+function cli(args, dataDir) {
   const res = spawnSync(process.execPath, [path.join(__dirname, 'work.js'), ...args], {
     encoding: 'utf8', timeout: 15000,
-    env: { ...process.env, SN_BRAIN_DATA_DIR: dir },
+    env: { ...process.env, SN_BRAIN_DATA_DIR: dataDir || dir },
   });
   return { code: res.status, out: (res.stdout || '') + (res.stderr || '') };
 }
@@ -52,6 +52,20 @@ check(r.code === 0 && /OK item wi4 done/.test(r.out) && /OK decision dr2 resolve
 st = store.getStatus();
 check(st.items.find((i) => i.id === 'wi4').status === 'done', 'combined done marks item done');
 check(st.decisions.find((d) => d.id === 'dr2').resolution === 'accept', 'combined done resolves decision as accept by default');
+
+console.log('\n-- Phase 6 T2 auto-link CLI --');
+const autoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-workflow-autolink-'));
+const autoStore = createWorkStore(autoDir);
+autoStore.startSession('Auto link CLI', 'Status should suggest and command should link');
+autoStore.addItem('Codex target', { role: 'build' });
+autoStore.assignItem('wi1', 'codex');
+autoStore.ingestEvent({ type: 'command_running', agent: 'codex', sessionId: 'codex-cli-auto', payload: {} });
+r = cli(['status'], autoDir);
+check(r.code === 0 && /auto-link available: wi1/.test(r.out), 'status suggests auto-link for unique candidate');
+r = cli(['link', '--auto'], autoDir);
+check(r.code === 0 && /OK auto-linked ar1 \(codex:codex-cli-auto\) -> wi1/.test(r.out), 'link --auto links unique candidate');
+st = autoStore.getStatus();
+check(st.runs.find((x) => x.id === 'ar1').workItemId === 'wi1', 'CLI auto-link persists the run link');
 
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
 process.exit(failures === 0 ? 0 : 1);

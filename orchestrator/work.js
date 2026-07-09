@@ -8,6 +8,7 @@
  *   node orchestrator/work.js item add "Let Codex implement relay" [--role build|review|doc|test]
  *   node orchestrator/work.js item assign <itemId> <codex|claude-code|generic-cli>
  *   node orchestrator/work.js item link <itemId> <agent:sessionId | runId>
+ *   node orchestrator/work.js link --auto
  *   node orchestrator/work.js item done <itemId> [--resolve <drId>] [--no-notify]
  *   node orchestrator/work.js decision add "Accept this plan?" [--item <itemId>]
  *   node orchestrator/work.js decision resolve <drId> <accept|reject|note> [--no-notify]
@@ -56,6 +57,14 @@ function relTime(iso) {
   return Math.round(m / 60) + 'h ago';
 }
 
+function runRef(run) {
+  return `${run.agent}:${run.agentSessionId}`;
+}
+
+function candidateLine(item) {
+  return `${item.id} [${item.status}] ${item.title}`;
+}
+
 async function printStatus() {
   const health = await probeLinks({ timeoutMs: 500 });
   console.log(formatLinkHealthLine(health));
@@ -83,10 +92,17 @@ async function printStatus() {
   }
 
   if (st.unassignedRuns.length) {
+    const autoHints = new Map(
+      store.getAutoLinkPlan()
+        .filter((p) => p.candidates.length === 1)
+        .map((p) => [p.run.id, p.candidates[0]])
+    );
     console.log('\nUnassigned AgentRuns (link with: work.js item link <itemId> <agent:sessionId>):');
     for (const r of st.unassignedRuns) {
       const events = Object.entries(r.eventCounts).map(([t, n]) => `${t}x${n}`).join(' ');
       console.log(`  ${r.id}  ${r.agent}:${r.agentSessionId}  [${RUN_STATE_LABEL[r.state] || r.state}]  last ${relTime(r.lastEventAt)}  (${events})`);
+      const candidate = autoHints.get(r.id);
+      if (candidate) console.log(`    auto-link available: ${candidate.id} (${candidate.title})  run: node orchestrator\\work.js link --auto`);
     }
   }
 
@@ -152,6 +168,26 @@ async function main() {
     if (group === 'item' && verb === 'link') {
       const { item, run } = store.linkRun(rest[0], rest[1]);
       console.log(`OK run ${run.id} (${run.agent}:${run.agentSessionId}) linked to item ${item.id}`);
+      return;
+    }
+    if (group === 'link' && flags.auto) {
+      const result = store.autoLinkRuns();
+      if (!result.linked.length && !result.ambiguous.length && !result.noCandidates.length) {
+        console.log('No unassigned AgentRuns to auto-link.');
+        return;
+      }
+      for (const { item, run } of result.linked) {
+        console.log(`OK auto-linked ${run.id} (${runRef(run)}) -> ${item.id} (${item.title})`);
+      }
+      for (const { run, candidates } of result.ambiguous) {
+        console.log(`SKIP ${run.id} (${runRef(run)}): ambiguous candidates`);
+        for (const item of candidates) {
+          console.log(`  candidate ${candidateLine(item)}  command: node orchestrator\\work.js item link ${item.id} ${run.id}`);
+        }
+      }
+      for (const { run } of result.noCandidates) {
+        console.log(`SKIP ${run.id} (${runRef(run)}): no item assigned to ${run.agent}`);
+      }
       return;
     }
     if (group === 'item' && verb === 'done') {

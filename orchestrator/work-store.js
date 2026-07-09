@@ -178,6 +178,20 @@ function createWorkStore(dirOverride) {
   }
 
   /** Link an existing AgentRun (by "agent:sessionId" key or run id) to an item. */
+  function applyRunLink(item, run) {
+    run.workItemId = item.id;
+    if (!item.runs.includes(run.id)) item.runs.push(run.id);
+    // Linking means "work has been attached to this item" — sync the status
+    // even when the run already settled (idle/completed), otherwise a todo
+    // item with a finished run under it would mislead the summary. done and
+    // dropped are user verdicts and stay untouched; done is always manual.
+    if (item.status !== 'done' && item.status !== 'dropped') {
+      if (run.state === 'waiting_user') item.status = 'waiting_user';
+      else if (item.status === 'todo') item.status = 'in_progress';
+    }
+    item.updatedAt = nowIso();
+  }
+
   function linkRun(itemId, runRef) {
     return withState((s) => {
       const item = getItemOrThrow(s, itemId);
@@ -189,18 +203,49 @@ function createWorkStore(dirOverride) {
         const known = Object.values(s.runs).map((r) => `${r.id}(${r.agent}:${r.agentSessionId})`).join(', ') || '(暂无 run，先让 agent 发事件)';
         throw new Error(`找不到 run：${runRef}\n已知 runs：${known}`);
       }
-      run.workItemId = item.id;
-      if (!item.runs.includes(run.id)) item.runs.push(run.id);
-      // Linking means "work has been attached to this item" — sync the status
-      // even when the run already settled (idle/completed), otherwise a todo
-      // item with a finished run under it would mislead the summary. done and
-      // dropped are user verdicts and stay untouched; done is always manual.
-      if (item.status !== 'done' && item.status !== 'dropped') {
-        if (run.state === 'waiting_user') item.status = 'waiting_user';
-        else if (item.status === 'todo') item.status = 'in_progress';
-      }
-      item.updatedAt = nowIso();
+      applyRunLink(item, run);
       return { item, run };
+    });
+  }
+
+  function autoLinkCandidatesForRun(s, run) {
+    return Object.values(s.items).filter((item) =>
+      item.assignedAgent === run.agent && item.status !== 'done' && item.status !== 'dropped'
+    );
+  }
+
+  function getAutoLinkPlan() {
+    const s = load();
+    const runs = Object.values(s.runs).filter((r) => !r.workItemId);
+    return runs.map((run) => ({
+      run,
+      candidates: autoLinkCandidatesForRun(s, run).map((item) => ({
+        id: item.id,
+        title: item.title,
+        status: item.status,
+        role: item.role,
+        sessionId: item.sessionId,
+      })),
+    }));
+  }
+
+  function autoLinkRuns() {
+    return withState((s) => {
+      const result = { linked: [], ambiguous: [], noCandidates: [] };
+      const runs = Object.values(s.runs).filter((r) => !r.workItemId);
+      for (const run of runs) {
+        const candidates = autoLinkCandidatesForRun(s, run);
+        if (candidates.length === 1) {
+          const item = candidates[0];
+          applyRunLink(item, run);
+          result.linked.push({ item, run });
+        } else if (candidates.length > 1) {
+          result.ambiguous.push({ run, candidates });
+        } else {
+          result.noCandidates.push({ run, candidates: [] });
+        }
+      }
+      return result;
     });
   }
 
@@ -313,6 +358,7 @@ function createWorkStore(dirOverride) {
     filePath, dir, load, save,
     startSession, closeSession,
     addItem, assignItem, linkRun, markItemDone,
+    getAutoLinkPlan, autoLinkRuns,
     addDecision, resolveDecision,
     ingestEvent, getStatus,
   };
