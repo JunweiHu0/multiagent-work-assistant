@@ -73,17 +73,28 @@ node orchestrator\work.js session close
 
 > 下周没有人逼你，你还会自愿用它吗？
 
+## 产品定位（2026-07-09 定案）
+
+本项目的定位是**闭源桌面 agent（Claude Code / Codex / WorkBuddy …）之上的联合管理层**：不替代任何 agent，而是帮用户把这些各自闭源、模型互不相通的强 agent 联合起来执行任务。完整论证、护城河判断、三个硬问题与分叉框架见 [docs/strategy/2026-07-09-union-layer-positioning.md](strategy/2026-07-09-union-layer-positioning.md)。
+
+要点：厂商无动机做跨厂商层（激励结构决定的长期空档）；护城河是 adapter 集成脏活而非编排框架；管理器自身的"大脑"也走 agent-neutral——通过 MCP 让任意 agent 充当管理员。
+
 ## Phase 7 Gate
 
 Phase 7（MCP server / supervised dispatch / agent report protocol）现在不做。
 
 开工条件：
 
-1. T8 有 2-3 次真实任务记录。
-2. 用户给出书面 go。
-3. Fable / Claude Code 对真实使用结果和 Phase 7 设计做 review。
+1. T8 有 2-3 次真实任务记录（记录本 `docs/acceptance/phase-6-t8-real-use-runbook.md`）。
+2. 用户给出书面 go / no-go。
+3. Fable / Claude Code 出书面决策记录（存 `docs/reviews/`），据此选定分叉。
 
-未满足以上条件时，不实现 MCP、dispatch、report protocol、自动 spawn、自动授权或更多 agent。
+分叉（终点都是联合管理层，区别只在保留多少 CLI 记账仪式）：
+
+- **Go** → 按序推进 7.1 对话式管理（MCP）→ 7.2 受控派发 → 7.3 报告协议 → Phase 8 第三个 adapter 证明联合性。
+- **No-go** → 保留观察核心（adapters + relay + pet + summary），砍掉被证伪的 CLI 记账仪式，直接跳到 MCP + 自然语言作为唯一管理界面。
+
+未满足开工条件时，不实现 MCP、dispatch、report protocol、自动 spawn、自动授权或更多 agent。派发面（`claude -p` / `codex exec` / WorkBuddy 注入面）遵循 probe-first：先 probe 后实现，绝不伪造事件。
 
 ## Backlog
 
