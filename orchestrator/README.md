@@ -1,278 +1,208 @@
-# Brain Relay（Phase 3.1）
+# Orchestrator Manual
 
-orchestrator 的第一块砖：**透明事件中继 + 本地事件记录**。不做调度、不做分解、
-不控制任何 agent。
+`orchestrator/` 是 Multiagent Work Assistant 的本地大脑层。它只做本地记账和文件工件，不 spawn agent、不调用 LLM API、不读 prompt/transcript/source/diff/tool output/token/secret。
 
-```text
-agent adapters ──(SUPERNONO_BRIDGE_PORT=4175)──► brain relay (127.0.0.1:4175)
-                                                     │ 记录 envelope + 转发状态（JSONL）
-                                                     ▼
-                                          pet bridge (127.0.0.1:4174 /signal)
-```
+## 1. Relay
 
-设计依据：[docs/planning/phase-3-orchestrator-plan.md](../docs/planning/phase-3-orchestrator-plan.md) §4（决策 D1）。
-
-## 三条契约
-
-1. **透明**：转发的是原始请求字节，逐字节不变——不改任何字段、不重排 key、
-   不丢未知字段。pet 看到的与 adapter 直连时完全一致。
-2. **绝不伤害 agent**：合法事件**立即**应答 `{ok:true, accepted:true}`，转发在
-   应答之后异步进行——上游 hook 的延迟与 pet 是否在线无关；pet 不在时事件
-   照常落盘（`forward: "missed"`），relay 不崩溃。
-3. **隐私**：日志只含 `{at, envelope, forward}` 三个字段。envelope 是 adapter
-   已脱敏的协议事件；不记录 HTTP 头、不派生任何内容。启动 relay 即表示同意
-   本机记录事件日志——删除 `.supernono/` 目录即清除全部记录。
-
-## 使用
+relay 接收 adapter 发来的 signal envelope，写 JSONL 日志，并逐字节透明转发给桌宠。
 
 ```powershell
-# 启动 relay（默认 127.0.0.1:4175 → 127.0.0.1:4174）
-node orchestrator/relay.js
-
-# 让 adapter 指向 relay（临时，作用于该会话启动的 hooks）：
-#   Claude Code hooks / Codex plugin hooks 的 sender 都读 SUPERNONO_BRIDGE_PORT。
-#   在启动 agent 的环境里设：
-#     PowerShell:  $env:SUPERNONO_BRIDGE_PORT = "4175"
-#     cmd:         set SUPERNONO_BRIDGE_PORT=4175
-#   不设置时 adapter 直连 4174，一切与 Phase 2 相同（opt-in，可随时退回）。
-
-# 健康检查（relay、pet、转发路径、数据目录、回环配置）
-node orchestrator/health-check.js
-
-# 完整 fixture 验证（22 项断言：透明性/校验/pet-down/日志卫生）
-node orchestrator/relay-fixture-test.js
+node orchestrator\relay.js
+node orchestrator\health-check.js
 ```
 
-环境变量：
+默认端口：
 
-| 变量 | 默认 | 说明 |
-| --- | --- | --- |
-| `SN_BRAIN_PORT` | `4175` | relay 监听端口 |
-| `SN_RELAY_PET_PORT` | `4174` | 下游 pet 桥端口。**故意不用** `SUPERNONO_BRIDGE_PORT`——否则全局导出 4175 会让 relay 转发给自己；relay 启动时有回环自检 |
-| `SN_BRAIN_DATA_DIR` | `<repo>/.supernono` | JSONL 日志目录（已 gitignore），文件按天：`events-YYYYMMDD.jsonl` |
+| 端口 | 用途 |
+| --- | --- |
+| `4175` | brain relay，adapter 可通过 `SUPERNONO_BRIDGE_PORT=4175` 指向这里 |
+| `4174` | SuperNoNo pet bridge，由 `codex-task-pet` 提供 |
 
-## Work Store 与 CLI（Phase 3.2）
+关键契约：
 
-relay 之上的最小"工作记账"：手动创建工作会话与任务、分配 agent，relay 收到的
-事件自动归组为 AgentRun，由你把 run 挂到任务上。**不做调度、不 spawn agent、
-不读任何正文**——记账数据只来自 signal envelope 和你的手动输入。
-
-状态文件：`.supernono/workbench-state.json`（gitignored；损坏时报错并拒绝
-覆盖，绝不静默重建——修复或移走该文件后重试）。
-
-```powershell
-# 典型一轮
-node orchestrator/work.js session start "实现 Claude adapter" --goal "把 hooks 事件接进桌宠"
-node orchestrator/work.js item add "让 Codex 实现 relay" --role build
-node orchestrator/work.js item assign wi1 codex
-#   ……让 agent 干活（事件经 relay 进来，自动出现为 AgentRun）……
-node orchestrator/work.js status                     # 会列出"未关联的 AgentRun"
-node orchestrator/work.js item link wi1 codex:<sessionId>
-node orchestrator/work.js item done wi1
-node orchestrator/work.js decision add "是否接受这个方案？" --item wi1
-node orchestrator/work.js decision resolve dr1 accept
-node orchestrator/work.js session close
-```
-
-数据模型（设计文档 §5）：WorkSession（`ws1`）→ WorkItem（`wi1`，role =
-build/review/doc/test）→ 关联 AgentRun（`ar1`，按 `agent:sessionId` 从事件流
-自动建立）；DecisionRequest（`dr1`）记录需要你拍板的事。
-
-状态流转规则：run 状态由事件类型驱动（working / waiting_user / completed /
-idle）；已关联 item 会自动 待办→进行中、等待用户↔进行中；**done 永远手动**。
-无 sessionId 的事件（notify wrapper）不参与记账，只走转发与日志。
-
-已知 MVP 限制：relay 与 CLI 是两个进程对同一文件做 read-modify-write，理论上
-存在并发竞态；人类操作尺度下可接受，出问题再收敛为单写者。
+- 转发原始 body，不重排 key，不丢未知字段。
+- 合法事件先应答 `{ok:true, accepted:true}`，再异步转发。
+- 日志只记录 `{at,envelope,forward}`，不记录 HTTP headers 或正文派生内容。
+- 浏览器 `Origin` 请求会被拒绝。
 
 测试：
 
 ```powershell
-node orchestrator/work-store-fixture-test.js       # 30 项：领域操作/归组/损坏保护
-node orchestrator/relay-work-integration-test.js   # 20 项：relay+store+CLI 端到端
+node orchestrator\relay-fixture-test.js
+node orchestrator\relay-work-integration-test.js
+node orchestrator\status-health-fixture-test.js
 ```
 
-## 已知限制（按设计）
+## 2. Work Store
 
-- relay 是单点：不开 relay 且 adapter 指着 4175 时，事件既到不了 brain 也到不了
-  pet（设计文档 R1）。所以是 opt-in 模式，health-check 会显式报告链路状态。
-- 应答不反映转发结果（异步转发）；转发成败看 JSONL 的 `forward` 字段和
-  `/health` 的 counters。
-- 带 `Origin` 头的请求（浏览器来源）一律 403——本地 adapter 不发该头。
+work store 是本地 JSON 记账文件：`.supernono/workbench-state.json`。
 
-## Phase 3.3-3.5 MVP usage
+核心对象：
 
-Phase 3 now has a complete local MVP loop: relay -> work store -> summary -> manual review workflow. It is still intentionally manual: the orchestrator records and summarizes work, but does not spawn agents, auto-authorize tools, or read prompt/source/diff/transcript/tool output.
+- `WorkSession`：一轮工作，例如 `ws1`
+- `WorkItem`：一个任务，例如 `wi1`
+- `AgentRun`：一个真实 agent 会话，例如 `ar1`，由 `agent:sessionId` 自动归组
+- `DecisionRequest`：需要用户拍板的事项，例如 `dr1`
 
-### Generate a metadata-only summary
+常用命令：
 
 ```powershell
-node orchestrator/work.js summary
-node orchestrator/work.js summary --notify
+node orchestrator\work.js status
+node orchestrator\work.js status --all
+node orchestrator\work.js session start "Task title" --goal "Goal"
+node orchestrator\work.js session close
+node orchestrator\work.js item add "Codex implement X" --role build
+node orchestrator\work.js item assign wi1 codex
+node orchestrator\work.js item link wi1 codex:<sessionId>
+node orchestrator\work.js link --auto
+node orchestrator\work.js item done wi1
 ```
 
-`summary` writes `.supernono/summaries/summary-YYYYMMDD-HHMMSS.md`. The report contains item status, linked runs, event type counts, elapsed time, open decisions, and relay forwarding totals. It deliberately excludes prompt, transcript, source, diff, tool output, tokens, and secrets.
-
-With `--notify`, the workbench sends a normal signal envelope as `agent:"assistant"`, `adapter:"workbench"`, `type:"completed"` with the summary path as an artifact. Point `SN_BRAIN_PORT` / `SUPERNONO_BRIDGE_PORT` as usual if you want the notification to go through relay or direct bridge.
-
-### Create the first fixed multiagent workflow
+当前推荐入口：
 
 ```powershell
-node orchestrator/work.js workflow review-loop "Implement feature X" --goal "Codex builds, Claude reviews, user decides"
+node orchestrator\work.js go "Implement feature X" --goal "Codex builds, Claude reviews, user decides"
 ```
 
-This creates:
+`go` 会一次性完成 deterministic plan draft、plan accept、prompt pack。它仍然不启动 agent。
 
-- a WorkSession (`ws...`)
-- a Codex build WorkItem
-- a Claude Code review WorkItem
-- a DecisionRequest for accepting/rejecting the review result
+归档规则：
 
-It does **not** launch Codex or Claude Code. You still run the agents manually, then link observed runs with:
+- `session close` 会把该 session 的 linked runs 和该时间窗内的 unassigned runs 标记为 archived。
+- 默认 `status` 和 `summary` 隐藏 archived runs。
+- `status --all` 显示 archived runs。
+- archived run 收到新事件时会自动解除归档。
+
+测试：
 
 ```powershell
-node orchestrator/work.js status
-node orchestrator/work.js item link wi1 codex:<sessionId>
-node orchestrator/work.js item link wi2 claude-code:<sessionId>
-node orchestrator/work.js item done wi1
-node orchestrator/work.js decision resolve dr1 accept
+node orchestrator\work-store-fixture-test.js
+node orchestrator\workflow-fixture-test.js
 ```
 
-### Tests
+## 3. Decisions
+
+决策 brief 是给用户拍板的 metadata-only Markdown。
 
 ```powershell
-node orchestrator/work-store-fixture-test.js
-node orchestrator/relay-work-integration-test.js
-node orchestrator/relay-fixture-test.js
-node orchestrator/summary-fixture-test.js
-node orchestrator/workflow-fixture-test.js
+node orchestrator\work.js decision add "Accept review result?" --item wi2
+node orchestrator\work.js decision brief dr1 --notify
+node orchestrator\work.js decision resolve dr1 accept
+node orchestrator\work.js item done wi2 --resolve dr1
 ```
 
-## Phase 3.6-3.8 real-use, summary v2, and prompt generation
+`--notify` 会以 `agent:"assistant"`、`adapter:"workbench"` 向桌宠发送 attention 事件。`decision resolve` 会发送对应的 resolve/settle 信号，避免 assistant 卡片卡在 waiting 状态。
 
-The local MVP is now meant to be tested on real work before adding automation.
+## 4. Summary
 
-### Real-use acceptance
-
-Use the checklist in `docs/acceptance/phase-3-6-real-use.md`. The pass/fail question is product usefulness, not just script success: does the workflow reduce coordination load enough to justify more automation?
-
-### Summary v2
+summary 生成可交接的 Markdown handoff。
 
 ```powershell
-node orchestrator/work.js summary
-node orchestrator/work.js summary --notify
+node orchestrator\work.js summary
+node orchestrator\work.js summary --notify
 ```
 
-The summary is a handoff-style Markdown report with:
+输出位置：
 
-- Snapshot
-- Next Actions
-- Completed
-- In Progress
-- Waiting For User
-- Todo / Not Started
-- Agent Activity
-- Unassigned Agent Runs
-- Open Decisions
-- Files
-- Safety Note
-
-It is still metadata-only. It does not include prompt, transcript, source, diff, tool output, tokens, or secrets.
-
-### Prompt generator
-
-```powershell
-node orchestrator/work.js prompt codex wi1
-node orchestrator/work.js prompt claude wi2
-node orchestrator/work.js prompt review-loop
+```text
+.supernono/summaries/summary-YYYYMMDD-HHMMSS.md
 ```
 
-Prompts are written to `.supernono/prompts/` and also printed to stdout for copying. They are task instructions only: the orchestrator does not send them to agents and does not spawn Codex or Claude Code.
+内容包含 item 状态、linked run 事件统计、open decisions、relay forward 统计和下一步建议。它默认隐藏 archived runs，且不包含 prompt/transcript/source/diff/tool output/token/secret。
 
-### Recommended manual loop
+测试：
 
 ```powershell
-node orchestrator/relay.js
-node orchestrator/work.js workflow review-loop "Implement feature X" --goal "Codex builds, Claude reviews, user decides"
-node orchestrator/work.js prompt review-loop
-# copy prompts into agents manually
-node orchestrator/work.js status
-node orchestrator/work.js item link wi1 codex:<sessionId>
-node orchestrator/work.js item link wi2 claude-code:<sessionId>
-node orchestrator/work.js decision resolve dr1 accept
-node orchestrator/work.js item done wi1
-node orchestrator/work.js item done wi2
-node orchestrator/work.js summary --notify
+node orchestrator\summary-fixture-test.js
+node orchestrator\workbench-signal-fixture-test.js
 ```
 
-Additional tests:
+## 5. Prompt Pack
+
+prompt generator 只生成可复制的任务说明，不发送给 agent。
 
 ```powershell
-node orchestrator/summary-fixture-test.js
-node orchestrator/prompt-fixture-test.js
-node orchestrator/workflow-fixture-test.js
+node orchestrator\work.js prompt codex wi1
+node orchestrator\work.js prompt claude wi2
+node orchestrator\work.js prompt review-loop
+node orchestrator\work.js prompt pack ws1
 ```
 
-## Phase 4 Semi-Automatic Brain
+`prompt pack` 输出到：
 
-Phase 4 adds conservative brain helpers on top of the Phase 3 relay/work store. They generate drafts and copyable files, but still do not spawn agents, call LLM APIs, auto-authorize tools, or read prompt/source/diff/transcript/tool-output bodies.
-
-```powershell
-node orchestrator/work.js plan draft "Implement feature X" --goal "Codex builds, Claude reviews, user decides"
-node orchestrator/work.js plan accept .supernono/plans/plan-xxx.json
-node orchestrator/work.js prompt pack ws1
-node orchestrator/work.js decision brief dr1 --notify
+```text
+.supernono/prompts/<wsId>/
 ```
 
-Outputs are written under `.supernono/plans/`, `.supernono/prompts/<sessionId>/`, and `.supernono/briefs/`.
-
-Implemented pieces:
-
-- `plan draft`: deterministic review-loop draft with Codex build item, Claude review item, and one user decision gate.
-- `plan accept`: converts the draft into WorkSession / WorkItems / DecisionRequest and marks the draft accepted.
-- `prompt pack`: writes per-agent prompts plus a user checklist.
-- `decision brief`: writes a metadata-only decision note; `--notify` sends an assistant/workbench `permission_required` signal to the pet.
-
-Docs:
-
-- `docs/planning/phase-4-brain-plan.md`
-- `docs/acceptance/phase-4-semi-automatic-brain.md`
-
-Test:
+测试：
 
 ```powershell
-node orchestrator/phase4-fixture-test.js
+node orchestrator\prompt-fixture-test.js
+node orchestrator\phase4-fixture-test.js
 ```
 
-## Phase 5 Python Brain Layer
+## 6. Brain Planner
 
-Phase 5 adds a narrow Python brain spike while keeping the Node.js local device layer intact.
+Python brain 是窄边界 spike：Node 把 metadata-only JSON 传给 Python，Python 输出兼容的 `supernono.planDraft.v1`。它不在 hook 热路径里。
 
 ```powershell
-# If Python is not globally available:
+node orchestrator\work.js brain check
+node orchestrator\work.js brain plan "Implement feature X" --goal "Codex builds, Claude reviews"
+```
+
+如果本机没有全局 Python，可设置：
+
+```powershell
 $env:SN_PYTHON = "C:\Users\1\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
-
-node orchestrator/work.js brain check
-node orchestrator/work.js brain plan "Implement feature X" --goal "Codex builds, Claude reviews, user decides"
-node orchestrator/work.js plan accept .supernono/plans/brain-plan-xxx.json
-node orchestrator/work.js prompt pack ws1
 ```
 
-`brain-python/planner.py` reads metadata-only JSON from stdin and writes a `supernono.planDraft.v1` JSON draft to stdout. It is deterministic, dependency-free, and does not call an LLM. It does not read prompt, transcript, source body, diff, tool output, token, or secret data.
-
-Boundary:
-
-- Node.js remains responsible for hooks, relay, CLI, and Electron-facing local integration.
-- Python is reserved for future planner/evaluator/memory/RAG/heavier orchestration logic.
-- Python runs only when the user invokes `brain plan`; it is not in hook hot paths.
-
-Docs:
-
-- `docs/planning/phase-5-python-brain-spike.md`
-- `docs/acceptance/phase-5-python-brain-acceptance.md`
-
-Test:
+测试：
 
 ```powershell
-node orchestrator/brain-fixture-test.js
+node orchestrator\brain-fixture-test.js
 ```
+
+## 7. Full Manual Loop
+
+```powershell
+node orchestrator\relay.js
+node orchestrator\work.js go "Implement feature X" --goal "Codex builds, Claude reviews, user decides"
+
+# Copy prompts from .supernono/prompts/<wsId>/ into Codex and Claude Code manually.
+
+node orchestrator\work.js status
+node orchestrator\work.js link --auto
+node orchestrator\work.js decision brief dr1 --notify
+node orchestrator\work.js item done wi2 --resolve dr1
+node orchestrator\work.js summary --notify
+node orchestrator\work.js session close
+```
+
+## 8. Full Test Matrix
+
+```powershell
+node --check orchestrator\*.js
+node orchestrator\relay-fixture-test.js
+node orchestrator\work-store-fixture-test.js
+node orchestrator\relay-work-integration-test.js
+node orchestrator\summary-fixture-test.js
+node orchestrator\prompt-fixture-test.js
+node orchestrator\workflow-fixture-test.js
+node orchestrator\phase4-fixture-test.js
+node orchestrator\workbench-signal-fixture-test.js
+node orchestrator\status-health-fixture-test.js
+```
+
+Optional:
+
+```powershell
+node orchestrator\brain-fixture-test.js
+```
+
+## 9. Do Not Do Yet
+
+- Do not spawn Codex / Claude Code from orchestrator.
+- Do not add MCP server or dispatch before T8 go/no-go.
+- Do not call an LLM API from this repo.
+- Do not read prompt/transcript/source/diff/tool output/token/secret.
+- Do not add npm dependencies for the current hardening phase.

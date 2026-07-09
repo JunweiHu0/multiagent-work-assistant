@@ -1,58 +1,117 @@
 # Multiagent Work Assistant
 
-面向个人开发者的多 agent 工作助理**核心仓库**：聚合 Codex、Claude Code 等
-coding agent 的工作状态，决定"用户此刻应该关注谁"，并通过统一信号协议驱动
-桌面前端。
+SuperNoNo / Multiagent Work Assistant 的大脑仓库：负责接收 Codex、Claude Code 等 coding agent 的本地 hook 信号，记录工作进展，并生成可交接的计划、提示词、决策 brief 与总结。
 
-## 这个仓库是什么、不是什么
+桌宠 UI 不在本仓库。显示层在 `codex-task-pet`；本仓库只做 adapter、relay、work store、CLI 和文档工件。
 
-**这里不是桌宠 UI 仓库。** 桌宠（SuperNoNo）的 Electron UI、Live2D、托盘、
-面板和 `/signal` 本地桥都在另一个仓库：
+## 当前状态
 
-> https://github.com/JunweiHu0/codex-task-pet
+唯一状态来源是 [docs/roadmap.md](docs/roadmap.md)。截至 2026-07-09：
 
-两个仓库的分工一句话：
+- Codex 与 Claude Code 的真实 hook 接入已经验证过。
+- 本仓库已有 Claude Code adapter、brain relay、本地事件日志、work store、summary、prompt pack、decision brief、Python planner spike。
+- Phase 6 hardening 已完成本仓库内的 T0/T3/T4/T2/T5/T7。
+- 仍然不做自动 spawn agent、不调用 LLM API、不读 prompt/transcript/source/diff/tool output/token/secret。
+- Phase 7（MCP server / dispatch / report protocol）仍是未来工作，开工条件见 roadmap。
 
-```text
-codex-task-pet            = 脸 / 显示层（桌宠 UI + 本地桥 + renderer 状态展示）
-multiagent-work-assistant = 大脑 / 聚合层（adapter、agent 状态聚合、attention policy、协议）
-```
-
-两者通过本地信号协议通信：任何 adapter 向桌宠的本地桥
-`POST http://127.0.0.1:4174/signal` 发送 agent-neutral 事件（loopback-only，
-只传状态摘要，绝不传 prompt / 源码正文 / 密钥）。桌宠没运行时 adapter 静默
-失败，永远不阻塞 agent。
+## 仓库边界
 
 ```text
-Codex plugin hooks ─┐
-Claude Code hooks ──┤→ adapter → 统一信号协议 → POST /signal → SuperNoNo 桌宠
-generic CLI ────────┘   （本仓库）                （codex-task-pet）
+codex-task-pet
+  = 脸 / 显示层 / Electron 桌宠 / 127.0.0.1:4174 /signal
+
+multiagent-work-assistant
+  = 大脑 / adapter / relay / work store / CLI / Markdown 工件
 ```
 
-详细边界见 [docs/architecture/repo-boundary.md](docs/architecture/repo-boundary.md)。
+边界说明见 [docs/architecture/repo-boundary.md](docs/architecture/repo-boundary.md)。
 
-## 当前状态（2026-07-03）
+## 5 分钟上手
 
-- SuperNoNo v1.0 桌宠已定版（tag `v1.0.0`），Codex plugin hooks 真实接入已验证。
-- 桌宠端 multiagent core（agentStore：多 agent/session 隔离 + attention policy v0 +
-  timeline）已在 codex-task-pet 的 `v2/multiagent-work-assistant` 分支完成并验证。
-- 本仓库刚建立，第一阶段的工作是 **Claude Code hooks probe**（调研验证，
-  产出实测字段记录和 adapter 方案文档），**不急着做完整 orchestrator**。
+前提：Windows 上已有 Node.js / npm；不需要新增 npm 依赖。
 
-## 文档地图
+1. 启动 SuperNoNo 桌宠（另一个仓库）：
 
-| 文档 | 内容 |
+```powershell
+cd C:\Users\1\Desktop\project\codex-task-pet
+npm.cmd start
+```
+
+2. 启动 brain relay：
+
+```powershell
+cd C:\Users\1\Desktop\project\multiagent-work-assistant
+node orchestrator\relay.js
+```
+
+3. 在启动 agent 的终端里把 adapter 指向 relay：
+
+```powershell
+$env:SUPERNONO_BRIDGE_PORT = "4175"
+```
+
+4. 创建一轮手动 review-loop：
+
+```powershell
+node orchestrator\work.js go "Implement small feature" --goal "Codex builds, Claude reviews, user decides"
+```
+
+它会一次性完成：
+
+- 写 `.supernono/plans/*.json` 和 `.md`
+- accept 成 WorkSession / WorkItems / DecisionRequest
+- 写 `.supernono/prompts/<wsId>/` 下的 Codex / Claude prompt pack
+
+5. 把 prompt 手动复制给 Codex / Claude Code，等 hook 事件进入 relay 后查看状态：
+
+```powershell
+node orchestrator\work.js status
+node orchestrator\work.js link --auto
+node orchestrator\work.js status
+```
+
+6. 收尾：
+
+```powershell
+node orchestrator\work.js decision brief dr1 --notify
+node orchestrator\work.js item done wi2 --resolve dr1
+node orchestrator\work.js summary --notify
+node orchestrator\work.js session close
+```
+
+连续使用后，`session close` 会归档旧 run；默认 `status` / `summary` 不显示 archived run，排查时用：
+
+```powershell
+node orchestrator\work.js status --all
+```
+
+## 常用命令
+
+```powershell
+node orchestrator\health-check.js
+node orchestrator\work.js status
+node orchestrator\work.js status --all
+node orchestrator\work.js link --auto
+node orchestrator\work.js summary
+node orchestrator\work.js prompt pack ws1
+node orchestrator\work.js brain check
+```
+
+## 文档入口
+
+| 文档 | 用途 |
 | --- | --- |
-| [docs/roadmap.md](docs/roadmap.md) | 阶段路线图（probe → adapter MVP → 双 agent 验收 → 体验增强） |
-| [docs/handoff/2026-07-03-multiagent-handoff.md](docs/handoff/2026-07-03-multiagent-handoff.md) | 双仓库交接文档：当前状态、验证记录、家里电脑怎么继续 |
-| [docs/architecture/repo-boundary.md](docs/architecture/repo-boundary.md) | 两个仓库的职责边界 |
-| [docs/architecture/signal-protocol-v0.2-plan.md](docs/architecture/signal-protocol-v0.2-plan.md) | 信号协议 v0.2 增量计划（本仓库从 v0.2 起持有协议规范） |
-| [docs/strategy/supernono-v1-closeout-and-multiagent-strategy.md](docs/strategy/supernono-v1-closeout-and-multiagent-strategy.md) | 战略评审：v1.0 收尾裁决 + multiagent 架构建议 + 任务拆分 |
-| [docs/prd/multiagent-work-assistant-prd.md](docs/prd/multiagent-work-assistant-prd.md) | 产品 PRD |
+| [docs/roadmap.md](docs/roadmap.md) | 唯一状态 SoT，下一步看这里 |
+| [docs/planning/codex-execution-brief.md](docs/planning/codex-execution-brief.md) | Codex 执行队列、红线和提交标准 |
+| [orchestrator/README.md](orchestrator/README.md) | relay / work store / summary / prompt / brain 使用手册 |
+| [docs/reviews/2026-07-08-fable5-architecture-code-product-review.md](docs/reviews/2026-07-08-fable5-architecture-code-product-review.md) | Fable5 架构与产品评审 |
+| [docs/strategy/2026-07-08-manager-product-plan.md](docs/strategy/2026-07-08-manager-product-plan.md) | Phase 7+ 产品方向，当前只作为未来规划 |
 
-## 原则（对所有 adapter 生效）
+历史规划快照在 `docs/archive/`，不要把它们当作当前状态。
 
-1. 不让模型花 token 汇报状态——只用 hook / lifecycle / wrapper 等免 token 机制。
-2. 只发送结构化摘要，绝不发送 prompt、源码正文、diff、token、密钥。
-3. 桌宠未运行时静默失败，绝不影响 agent 本身。
-4. 协议 agent-neutral：不为任何 agent 增加专属事件名，差异在 adapter 内消化。
+## 安全边界
+
+- 不读、不记录、不发送 prompt / transcript / 源码正文 / diff / tool output / token / secret。
+- 只处理 agent hook 已经脱敏后的 signal envelope 元数据和用户手动输入。
+- relay 逐字节透明转发，不改协议字段语义。
+- adapter / relay / CLI 失败时应尽量不影响 agent 工作。
