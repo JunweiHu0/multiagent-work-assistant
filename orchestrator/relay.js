@@ -230,6 +230,13 @@ if (require.main === module) {
     console.log('[brain-relay] point adapters here with: SUPERNONO_BRIDGE_PORT=' + (process.env.SN_BRAIN_PORT || 4175));
     console.log('[brain-relay] Ctrl+C to stop.');
   }).catch((err) => {
+    if (err && err.code === 'EADDRINUSE') {
+      const port = process.env.SN_BRAIN_PORT || 4175;
+      console.error(`[brain-relay] failed to start: port ${port} is already in use; 可能已有 relay 在跑。`);
+      console.error('[brain-relay] Try: node orchestrator/health-check.js  or stop the existing relay before starting a new one.');
+      process.exit(1);
+      return;
+    }
     console.error('[brain-relay] failed to start:', err && err.message);
     process.exit(1);
   });

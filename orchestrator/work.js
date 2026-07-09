@@ -22,6 +22,7 @@
  *   node orchestrator/work.js status
  */
 const { createWorkStore } = require('./work-store');
+const { probeLinks, formatLinkHealthLine } = require('./health-probe');
 
 const store = createWorkStore();
 const argv = process.argv.slice(2);
@@ -54,7 +55,10 @@ function relTime(iso) {
   return Math.round(m / 60) + 'h ago';
 }
 
-function printStatus() {
+async function printStatus() {
+  const health = await probeLinks({ timeoutMs: 500 });
+  console.log(formatLinkHealthLine(health));
+
   const st = store.getStatus();
   if (!st.activeSession && st.sessions.length === 0) {
     console.log('No work session yet. Start one: node orchestrator/work.js session start "<title>"');
@@ -111,7 +115,7 @@ async function main() {
   const [group, verb, ...rest] = pos;
 
   try {
-    if (group === 'status' || (!group && !verb)) return printStatus();
+    if (group === 'status' || (!group && !verb)) return await printStatus();
 
     if (group === 'session' && verb === 'start') {
       const ws = store.startSession(rest.join(' '), flags.goal);
