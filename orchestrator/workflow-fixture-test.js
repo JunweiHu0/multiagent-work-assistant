@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { createWorkStore } = require('./work-store');
 
 let failures = 0;
 const check = (c, l) => { console.log((c ? '  PASS  ' : '  FAIL  ') + l); if (!c) failures++; };
@@ -32,6 +33,25 @@ check(summaries.length === 1, 'summary markdown file exists');
 const body = fs.readFileSync(path.join(summaryDir, summaries[0]), 'utf8');
 check(body.includes('Codex implement: Ship brain relay'), 'summary includes build item');
 check(body.includes('Claude Code review: Ship brain relay'), 'summary includes review item');
+
+console.log('\n-- Phase 6 T4 combined commands --');
+r = cli(['go', 'Ship', 'combined', 'workflow', '--goal', 'One command should draft, accept, and pack prompts']);
+check(r.code === 0 && /OK go plan draft:/.test(r.out), 'go writes a plan draft');
+check(/OK go plan accepted: ws2/.test(r.out), 'go accepts plan into a new session');
+check(/OK go prompt pack:/.test(r.out), 'go writes prompt pack');
+const plans = fs.existsSync(path.join(dir, 'plans')) ? fs.readdirSync(path.join(dir, 'plans')).filter((f) => f.endsWith('.json')) : [];
+check(plans.length >= 1, 'go leaves plan JSON under .supernono/plans');
+const promptDir = path.join(dir, 'prompts', 'ws2');
+check(fs.existsSync(path.join(promptDir, 'codex-wi3.md')) && fs.existsSync(path.join(promptDir, 'claude-code-wi4.md')), 'go leaves agent prompt files under .supernono/prompts/ws2');
+const store = createWorkStore(dir);
+let st = store.getStatus();
+check(st.activeSession && st.activeSession.id === 'ws2', 'go session becomes active');
+check(st.decisions.some((d) => d.id === 'dr2' && !d.resolvedAt), 'go creates an open decision gate');
+r = cli(['item', 'done', 'wi4', '--resolve', 'dr2', '--no-notify']);
+check(r.code === 0 && /OK item wi4 done/.test(r.out) && /OK decision dr2 resolved: accept/.test(r.out), 'item done --resolve closes item and decision');
+st = store.getStatus();
+check(st.items.find((i) => i.id === 'wi4').status === 'done', 'combined done marks item done');
+check(st.decisions.find((d) => d.id === 'dr2').resolution === 'accept', 'combined done resolves decision as accept by default');
 
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
 process.exit(failures === 0 ? 0 : 1);

@@ -8,10 +8,11 @@
  *   node orchestrator/work.js item add "Let Codex implement relay" [--role build|review|doc|test]
  *   node orchestrator/work.js item assign <itemId> <codex|claude-code|generic-cli>
  *   node orchestrator/work.js item link <itemId> <agent:sessionId | runId>
- *   node orchestrator/work.js item done <itemId>
+ *   node orchestrator/work.js item done <itemId> [--resolve <drId>] [--no-notify]
  *   node orchestrator/work.js decision add "Accept this plan?" [--item <itemId>]
  *   node orchestrator/work.js decision resolve <drId> <accept|reject|note> [--no-notify]
  *   node orchestrator/work.js workflow review-loop "Feature title" [--goal "..."]
+ *   node orchestrator/work.js go "Feature title" [--goal "..."]
  *   node orchestrator/work.js summary [--out path] [--notify]
  *   node orchestrator/work.js prompt <codex|claude|review-loop|pack> [itemId|sessionId] [--out path]
  *   node orchestrator/work.js plan draft "Feature title" [--goal "..."] [--mode review-loop]
@@ -110,6 +111,17 @@ function createReviewLoop(title, goal) {
   return { ws, build, review, decision };
 }
 
+async function resolveDecisionAndMaybeNotify(decisionId, resolution, flags) {
+  const { sendAssistantDecisionResolved } = require('./phase4');
+  const d = store.resolveDecision(decisionId, resolution || 'accept');
+  console.log(`OK decision ${d.id} resolved: ${d.resolution}`);
+  if (!flags['no-notify']) {
+    const sent = await sendAssistantDecisionResolved(d);
+    console.log(sent.ok ? `OK assistant resolved port ${sent.port}` : `WARN assistant resolve notify failed: ${sent.error || sent.status}`);
+  }
+  return d;
+}
+
 async function main() {
   const [pos, flags] = parseArgs(argv);
   const [group, verb, ...rest] = pos;
@@ -145,6 +157,7 @@ async function main() {
     if (group === 'item' && verb === 'done') {
       const item = store.markItemDone(rest[0]);
       console.log(`OK item ${item.id} done: ${item.title}`);
+      if (flags.resolve) await resolveDecisionAndMaybeNotify(flags.resolve, flags.resolution || 'accept', flags);
       return;
     }
     if (group === 'decision' && verb === 'add') {
@@ -153,13 +166,7 @@ async function main() {
       return;
     }
     if (group === 'decision' && verb === 'resolve') {
-      const { sendAssistantDecisionResolved } = require('./phase4');
-      const d = store.resolveDecision(rest[0], rest[1]);
-      console.log(`OK decision ${d.id} resolved: ${d.resolution}`);
-      if (!flags['no-notify']) {
-        const sent = await sendAssistantDecisionResolved(d);
-        console.log(sent.ok ? `OK assistant resolved port ${sent.port}` : `WARN assistant resolve notify failed: ${sent.error || sent.status}`);
-      }
+      await resolveDecisionAndMaybeNotify(rest[0], rest[1], flags);
       return;
     }
     if (group === 'decision' && verb === 'brief') {
@@ -178,6 +185,20 @@ async function main() {
       console.log(`  ${flow.build.id} -> codex (${flow.build.title})`);
       console.log(`  ${flow.review.id} -> claude-code (${flow.review.title})`);
       console.log(`  ${flow.decision.id} -> decision (${flow.decision.summary})`);
+      return;
+    }
+    if (group === 'go') {
+      const title = [verb, ...rest].filter(Boolean).join(' ');
+      const { writePlanDraft, acceptPlan, writePromptPack } = require('./phase4');
+      const draft = writePlanDraft(title, { goal: flags.goal, mode: flags.mode });
+      const accepted = acceptPlan(draft.jsonPath);
+      const pack = writePromptPack(accepted.ws.id);
+      console.log(`OK go plan draft: ${draft.jsonPath}`);
+      console.log(`OK go plan accepted: ${accepted.ws.id}`);
+      for (const item of accepted.items) console.log(`  ${item.id} -> ${item.assignedAgent || 'unassigned'} (${item.title})`);
+      for (const d of accepted.decisions) console.log(`  ${d.id} -> decision (${d.summary})`);
+      console.log(`OK go prompt pack: ${pack.outDir}`);
+      for (const f of pack.files) console.log(`  ${f.kind}: ${f.path}`);
       return;
     }
     if (group === 'plan' && verb === 'draft') {
