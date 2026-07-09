@@ -43,6 +43,10 @@ const ITEM_ROLES = ['build', 'review', 'doc', 'test'];
 
 function nowIso() { return new Date().toISOString(); }
 function str(v) { return typeof v === 'string' && v ? v : null; }
+function ms(v) {
+  const n = new Date(v || 0).getTime();
+  return Number.isFinite(n) ? n : 0;
+}
 
 function emptyState() {
   return {
@@ -130,9 +134,21 @@ function createWorkStore(dirOverride) {
       const id = sessionId || s.activeSessionId;
       const ws = s.sessions[id];
       if (!ws) throw new Error(`找不到 session：${id || '(无 active session)'}`);
+      const closedAt = nowIso();
       ws.status = 'closed';
-      ws.closedAt = nowIso();
+      ws.closedAt = closedAt;
       if (s.activeSessionId === id) s.activeSessionId = null;
+      const itemIds = new Set(ws.items || []);
+      const start = ms(ws.createdAt);
+      const end = ms(closedAt);
+      for (const run of Object.values(s.runs)) {
+        const belongsToSessionItem = run.workItemId && itemIds.has(run.workItemId);
+        const unassignedInWindow = !run.workItemId && ms(run.startedAt) >= start && ms(run.startedAt) <= end;
+        if (belongsToSessionItem || unassignedInWindow) {
+          run.archived = true;
+          run.archivedAt = closedAt;
+        }
+      }
       return ws;
     });
   }
@@ -216,7 +232,7 @@ function createWorkStore(dirOverride) {
 
   function getAutoLinkPlan() {
     const s = load();
-    const runs = Object.values(s.runs).filter((r) => !r.workItemId);
+    const runs = Object.values(s.runs).filter((r) => !r.workItemId && !r.archived);
     return runs.map((run) => ({
       run,
       candidates: autoLinkCandidatesForRun(s, run).map((item) => ({
@@ -232,7 +248,7 @@ function createWorkStore(dirOverride) {
   function autoLinkRuns() {
     return withState((s) => {
       const result = { linked: [], ambiguous: [], noCandidates: [] };
-      const runs = Object.values(s.runs).filter((r) => !r.workItemId);
+      const runs = Object.values(s.runs).filter((r) => !r.workItemId && !r.archived);
       for (const run of runs) {
         const candidates = autoLinkCandidatesForRun(s, run);
         if (candidates.length === 1) {
@@ -313,8 +329,14 @@ function createWorkStore(dirOverride) {
             startedAt: nowIso(), lastEventAt: nowIso(), lastEventType: type,
             state: RUN_STATE_BY_TYPE[type] || 'working',
             eventCounts: { [type]: 1 },
+            archived: false,
+            archivedAt: null,
           };
         } else {
+          if (run.archived) {
+            run.archived = false;
+            run.archivedAt = null;
+          }
           run.lastEventAt = nowIso();
           run.lastEventType = type;
           if (str(envelope.adapter)) run.adapter = envelope.adapter;
@@ -338,10 +360,12 @@ function createWorkStore(dirOverride) {
 
   /* ---- status snapshot ----------------------------------------------------- */
 
-  function getStatus() {
+  function getStatus(options) {
+    options = options || {};
     const s = load();
     const active = s.activeSessionId ? s.sessions[s.activeSessionId] : null;
-    const runs = Object.values(s.runs);
+    const allRuns = Object.values(s.runs);
+    const runs = options.includeArchived ? allRuns : allRuns.filter((r) => !r.archived);
     return {
       activeSession: active,
       sessions: Object.values(s.sessions),

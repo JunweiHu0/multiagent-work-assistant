@@ -21,7 +21,7 @@
  *   node orchestrator/work.js brain plan "Feature title" [--goal "..."] [--python path]
  *   node orchestrator/work.js plan accept <plan.json> [--force]
  *   node orchestrator/work.js decision brief <drId> [--notify]
- *   node orchestrator/work.js status
+ *   node orchestrator/work.js status [--all]
  */
 const { createWorkStore } = require('./work-store');
 const { probeLinks, formatLinkHealthLine } = require('./health-probe');
@@ -65,11 +65,16 @@ function candidateLine(item) {
   return `${item.id} [${item.status}] ${item.title}`;
 }
 
-async function printStatus() {
+function runStateText(run) {
+  return `${run.id}:${RUN_STATE_LABEL[run.state] || run.state}${run.archived ? ':archived' : ''}`;
+}
+
+async function printStatus(options) {
+  options = options || {};
   const health = await probeLinks({ timeoutMs: 500 });
   console.log(formatLinkHealthLine(health));
 
-  const st = store.getStatus();
+  const st = store.getStatus({ includeArchived: !!options.all });
   if (!st.activeSession && st.sessions.length === 0) {
     console.log('No work session yet. Start one: node orchestrator/work.js session start "<title>"');
     return;
@@ -85,7 +90,7 @@ async function printStatus() {
   for (const i of items) {
     const runs = i.runs.map((rid) => {
       const r = st.runs.find((x) => x.id === rid);
-      return r ? `${r.id}:${RUN_STATE_LABEL[r.state] || r.state}` : rid;
+      return r ? runStateText(r) : rid;
     }).join(', ');
     console.log(`  ${i.id}  [${ITEM_STATE_LABEL[i.status] || i.status}]  ${i.title}`
       + `  (role=${i.role}${i.assignedAgent ? ' agent=' + i.assignedAgent : ''}${runs ? ' runs=' + runs : ''})`);
@@ -143,7 +148,7 @@ async function main() {
   const [group, verb, ...rest] = pos;
 
   try {
-    if (group === 'status' || (!group && !verb)) return await printStatus();
+    if (group === 'status' || (!group && !verb)) return await printStatus(flags);
 
     if (group === 'session' && verb === 'start') {
       const ws = store.startSession(rest.join(' '), flags.goal);

@@ -43,6 +43,18 @@ check(!body.includes('SECRET SHOULD NOT APPEAR'), 'command payload not leaked');
 check(!body.includes('LEAK_STDOUT'), 'stdout not leaked');
 check(!body.includes('LEAK_TRANSCRIPT'), 'transcript not leaked');
 
+const archiveDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-summary-archive-test-'));
+const archiveStore = createWorkStore(archiveDir);
+archiveStore.startSession('Archive summary', 'Closed runs should not dominate handoff');
+archiveStore.addItem('Codex archived summary run', { role: 'build' });
+archiveStore.assignItem('wi1', 'codex');
+archiveStore.ingestEvent({ type: 'command_running', agent: 'codex', sessionId: 'codex-summary-archive', payload: {} });
+archiveStore.linkRun('wi1', 'codex:codex-summary-archive');
+archiveStore.closeSession('ws1');
+const archivedSummary = writeSummary({ dataDir: archiveDir });
+const archivedBody = fs.readFileSync(archivedSummary.outPath, 'utf8');
+check(!archivedBody.includes('run ar1: codex:'), 'summary hides archived runs by default');
+
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
 process.exit(failures === 0 ? 0 : 1);
 

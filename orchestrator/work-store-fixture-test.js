@@ -112,7 +112,27 @@ auto = autoStore.autoLinkRuns();
 check(auto.noCandidates.length === 1 && auto.noCandidates[0].run.agent === 'generic-cli', 'auto-link reports no-candidate run');
 check(!autoStore.getStatus().runs.find((x) => x.agentSessionId === 'generic-none').workItemId, 'no-candidate run is not linked');
 
-console.log('\n-- 9. corruption safety: never silently overwrite --');
+console.log('\n-- 9. run archive / hide / wake --');
+const archiveDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-archive-test-'));
+const archiveStore = createWorkStore(archiveDir);
+archiveStore.startSession('Archive smoke', 'Closed sessions hide old runs');
+archiveStore.addItem('Codex archived item', { role: 'build' });
+archiveStore.assignItem('wi1', 'codex');
+archiveStore.ingestEvent({ type: 'command_running', agent: 'codex', sessionId: 'codex-archive', payload: {} });
+archiveStore.linkRun('wi1', 'codex:codex-archive');
+archiveStore.ingestEvent({ type: 'command_running', agent: 'claude-code', sessionId: 'cc-unassigned-archive', payload: {} });
+archiveStore.closeSession('ws1');
+let hiddenStatus = archiveStore.getStatus();
+let fullStatus = archiveStore.getStatus({ includeArchived: true });
+check(hiddenStatus.runs.length === 0 && hiddenStatus.unassignedRuns.length === 0, 'closed session archives linked and in-window unassigned runs by default');
+check(fullStatus.runs.length === 2 && fullStatus.runs.every((r) => r.archived === true), '--all status can see archived runs');
+archiveStore.ingestEvent({ type: 'command_running', agent: 'codex', sessionId: 'codex-archive', payload: {} });
+hiddenStatus = archiveStore.getStatus();
+fullStatus = archiveStore.getStatus({ includeArchived: true });
+check(hiddenStatus.runs.length === 1 && hiddenStatus.runs[0].agentSessionId === 'codex-archive' && !hiddenStatus.runs[0].archived, 'new event wakes archived run');
+check(fullStatus.runs.find((r) => r.agentSessionId === 'cc-unassigned-archive').archived === true, 'unrelated archived run stays archived');
+
+console.log('\n-- 10. corruption safety: never silently overwrite --');
 const before = fs.readFileSync(store.filePath, 'utf8');
 fs.writeFileSync(store.filePath, 'this is {{{ not json');
 threw = false;

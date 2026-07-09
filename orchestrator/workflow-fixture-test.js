@@ -67,5 +67,19 @@ check(r.code === 0 && /OK auto-linked ar1 \(codex:codex-cli-auto\) -> wi1/.test(
 st = autoStore.getStatus();
 check(st.runs.find((x) => x.id === 'ar1').workItemId === 'wi1', 'CLI auto-link persists the run link');
 
+console.log('\n-- Phase 6 T5 archive visibility CLI --');
+const archiveDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-workflow-archive-'));
+const archiveStore = createWorkStore(archiveDir);
+archiveStore.startSession('Archive CLI', 'status hides archived runs unless --all');
+archiveStore.addItem('Codex archived target', { role: 'build' });
+archiveStore.assignItem('wi1', 'codex');
+archiveStore.ingestEvent({ type: 'command_running', agent: 'codex', sessionId: 'codex-cli-archive', payload: {} });
+archiveStore.linkRun('wi1', 'codex:codex-cli-archive');
+archiveStore.closeSession('ws1');
+r = cli(['status'], archiveDir);
+check(r.code === 0 && !/ar1:working:archived/.test(r.out), 'status hides archived linked run by default');
+r = cli(['status', '--all'], archiveDir);
+check(r.code === 0 && /ar1:working:archived/.test(r.out), 'status --all shows archived linked run');
+
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
 process.exit(failures === 0 ? 0 : 1);
