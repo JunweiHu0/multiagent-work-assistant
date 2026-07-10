@@ -1,106 +1,53 @@
 # Roadmap
 
-本文件是 `multiagent-work-assistant` 的唯一状态 SoT。其他 phase 文档和 archive 文档是历史记录或设计背景，不作为当前状态来源。
+本文件是 `multiagent-work-assistant` 的状态 SoT。产品定义以 [docs/prd/multiagent-director-prd-v1.md](prd/multiagent-director-prd-v1.md) 为唯一源头。
 
-## Current Status
+## 当前状态（2026-07-09）
 
-### Phase 2：真实 adapter 接入
+**产品已定案 = AI 编排总监。处于 V1 设计阶段,尚未开始 V1 编码。**
 
-- Phase 2.1：Claude Code hooks probe 完成。
-- Phase 2.2.0：Claude Code adapter MVP 完成并通过真实桌面测试。
-- Phase 2.3：Codex + Claude Code 双 agent 验收完成，用户报告真实测试通过。
-- Phase 2.4：multiagent panel 产品化在 `codex-task-pet` 完成。
-- Phase 2.5：adapter install / uninstall / health-check 工具完成。
-- Phase 2.6：semantic gates 完成；permission/error/testPass 仍 gated on real structured payload evidence。
-- Phase 2.7：真实环境运维验证完成。Phase 2 closed。
+### v0 探索（2026-07,已归档到 `legacy/`）
 
-### Phase 3：本地 orchestrator MVP
+一句话:验证了"能不能免 token 观测多个闭源 agent、并用一套 agent-neutral 协议聚合它们的工作状态"——能。
 
-- Phase 3.0：orchestrator 设计完成。
-- Phase 3.1：brain relay + local event log 完成。
-- Phase 3.2：work store + manual CLI 完成。
-- Phase 3.3：metadata-only work summary 完成。
-- Phase 3.4：manual orchestration CLI 完成 enough for MVP。
-- Phase 3.5：Codex -> Claude review-loop template 完成。
-- Phase 3.6：real-use acceptance checklist 完成，但真实使用只拿到 partial pass，后续投入必须谨慎。
-- Phase 3.7：summary v2 handoff format 完成。
-- Phase 3.8：copyable agent prompt generator 完成。
+- **验证到、且沿用的资产**:Codex/CC 免 token hook 接入、agent-neutral 信号协议(14 事件、metadata-only)、"只传元数据"隐私边界、逐字节透明的事件中继(relay)。
+- **被证伪 / 降级的**:CLI 记账当主 UX(摩擦太高)、桌宠当主角(降为 5% 的 ambient 点缀)。
+- 产物:桌宠(在 `codex-task-pet`)+ 观测核心 + CLI 记账层 → 归入 `legacy/`,概念挖回,代码不再以它为主线。
 
-### Phase 4：半自动 brain
+### 定案（2026-07-09）
 
-- Phase 4.0-4.6 完成：plan draft、plan accept、prompt pack、decision brief、Python spike conclusion、real-use checklist。
-- 仍不 spawn agent，不自动授权，不读正文。
+产品转向 director/编排。依据:[union-layer 定位](strategy/2026-07-09-union-layer-positioning.md)、[Fable5 评审](reviews/2026-07-08-fable5-architecture-code-product-review.md)。三条奠基决定见 [PRD 文末](prd/multiagent-director-prd-v1.md)。
 
-### Phase 5：Python brain layer spike
+## V1 路线（对齐 PRD）
 
-- Phase 5.0 完成：Node -> Python stdin/stdout planner，metadata-only input，compatible plan draft output。
-- 结论：Node 继续做 hooks/relay/CLI/Electron-facing local device layer；Python 暂时只保留为窄边界 planner spike，不深化成主实现。
+| 里程碑 | 目标 | 门槛 / 备注 |
+| --- | --- | --- |
+| **V1.0 选角引擎(英雄)** | 抽象任务 → 拆解角色 → roster/配额感知 → 生成 A/B/C 团队方案供选/微调 | **下一步先出功能规格**,再编码 |
+| **V1.1 无头派发** | `claude -p`/`codex exec` 拉起实例、派角色提示词、收产出;WorkBuddy/GLM 无头入口先 probe | probe-first,未确认前降级半自动 |
+| **V1.2 监督-评估-返工闭环** | 总监观测产出、判定通过/打回/重派,直到需求验证 | **产品天花板所在**;先在有边界任务上证明靠谱 |
+| **V1.3 护栏 + 逃生阀 + 交付** | 预算闸、隔离沙箱、不可逆动作门;卡住/超预算/没把握时弹回用户;成品 + 验收报告 | 护栏即产品 |
+| **V1.4 主界面 + 桌宠(5%)** | 编排监控室(交办/选角/执行三态)+ 桌宠 ambient 点缀 | 桌宠明确从属 |
 
-### Phase 6A'：真实闭环 hardening + 摩擦削减
+## 奠基决定（锁定）
 
-已完成：
+1. 执行体 = 无头 CLI 实例,不驱动 GUI 窗口。
+2. 大脑(用户自选 API 模型,只思考)/ 手(CC/Codex 实例,真干活)两层分离。
+3. V1 收窄到有边界项目;整个企业级软件当北极星不当承诺。
 
-- T0：assistant decision lifecycle 修复与 manager product plan 提交。
-- T3：`work status` 内嵌 relay/pet 链路健康；relay 端口占用错误更清楚。
-- T4：`work go` 合并 plan draft + accept + prompt pack；`item done --resolve` 合并常见收尾。
-- T2：`work link --auto` 半自动链接唯一匹配 run；status 提示可自动链接项。
-- T5：`session close` 归档历史 runs；`status` / `summary` 默认隐藏，`status --all` 可见。
-- T7：入口文档整理完成。
+## 红线（贯穿）
 
-未由本仓库执行：
+- probe-first:执行体无头入口先 probe 后实现,绝不伪造事件。
+- 隐私 metadata-only:不读/存/传源码正文、prompt、diff、tool output、token、secret。
+- 不自动授权任何不可逆动作(花大钱/删除/对外发布)——永远弹回用户。
+- BYO-API:总监的大脑由用户自带 key、自选闭源模型;产品不自带模型。
 
-- T6：pet-only 安全补课，属于 `codex-task-pet` 仓库。
-- T8：真实使用验收，属于用户任务。
+## 下一步动作
 
-## Current Recommended Action
+出 **选角引擎功能规格**:总监的输入(任务 + roster/配额)、拆解成角色的逻辑、角色→实例映射、配额/成本/时长预估、生成"看得懂敢选"的 A/B/C。这是 V1 最该先想透、最值钱的一块。
 
-T7 提交后，停止加能力。下一步是 T8：用户用当前手动流程跑 2-3 个真实任务，并写下摩擦点与 go/no-go。
+## Backlog / 待验证（probe-first）
 
-建议流程：
-
-```powershell
-node orchestrator\relay.js
-node orchestrator\work.js go "<task>" --goal "Codex builds, Claude reviews, user decides"
-node orchestrator\work.js status
-node orchestrator\work.js link --auto
-node orchestrator\work.js decision brief dr1 --notify
-node orchestrator\work.js item done wi2 --resolve dr1
-node orchestrator\work.js summary --notify
-node orchestrator\work.js session close
-```
-
-成功标准不是“脚本能跑”，而是回答：
-
-> 下周没有人逼你，你还会自愿用它吗？
-
-## 产品定位（2026-07-09 定案）
-
-本项目的定位是**闭源桌面 agent（Claude Code / Codex / WorkBuddy …）之上的联合管理层**：不替代任何 agent，而是帮用户把这些各自闭源、模型互不相通的强 agent 联合起来执行任务。完整论证、护城河判断、三个硬问题与分叉框架见 [docs/strategy/2026-07-09-union-layer-positioning.md](strategy/2026-07-09-union-layer-positioning.md)。
-
-要点：厂商无动机做跨厂商层（激励结构决定的长期空档）；护城河是 adapter 集成脏活而非编排框架；管理器自身的"大脑"也走 agent-neutral——通过 MCP 让任意 agent 充当管理员。
-
-## Phase 7 Gate
-
-Phase 7（MCP server / supervised dispatch / agent report protocol）现在不做。
-
-开工条件：
-
-1. T8 有 2-3 次真实任务记录（记录本 `docs/acceptance/phase-6-t8-real-use-runbook.md`）。
-2. 用户给出书面 go / no-go。
-3. Fable / Claude Code 出书面决策记录（存 `docs/reviews/`），据此选定分叉。
-
-分叉（终点都是联合管理层，区别只在保留多少 CLI 记账仪式）：
-
-- **Go** → 按序推进 7.1 对话式管理（MCP）→ 7.2 受控派发 → 7.3 报告协议 → Phase 8 第三个 adapter 证明联合性。
-- **No-go** → 保留观察核心（adapters + relay + pet + summary），砍掉被证伪的 CLI 记账仪式，直接跳到 MCP + 自然语言作为唯一管理界面。
-
-未满足开工条件时，不实现 MCP、dispatch、report protocol、自动 spawn、自动授权或更多 agent。派发面（`claude -p` / `codex exec` / WorkBuddy 注入面）遵循 probe-first：先 probe 后实现，绝不伪造事件。
-
-## Backlog
-
-- Codex adapter 安装产品化。
-- Claude Code Notification / permission_required 结构化证据补测。
-- PostToolUse error / testPass 结构化证据补测。
-- Store 并发写入策略（如果真实使用中出现竞态）。
-- Python path 诊断与更友好的 `brain check`。
-- Phase 7 候选：MCP server、supervised dispatch、agent report protocol。
+- 执行体批量无头拉起的各家限流/配额实测(尤其 WorkBuddy/GLM 无头入口是否存在)。
+- 总监评估质量:结构化 rubric vs 放任;"评审 agent"当 QA 的模式。
+- 成本/炸半径控制的具体机制。
+- 大而模糊任务的拆解质量边界。
