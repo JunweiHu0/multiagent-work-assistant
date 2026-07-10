@@ -36,6 +36,7 @@
 | --- | --- |
 | [docs/prd/multiagent-director-prd-v1.md](docs/prd/multiagent-director-prd-v1.md) | **产品定义,唯一源头** |
 | [docs/roadmap.md](docs/roadmap.md) | 状态 SoT + V1 路线 |
+| [docs/planning/v1-build-sequence.md](docs/planning/v1-build-sequence.md) | V1 构建顺序(依赖排期,持续执行的取活清单) |
 | [docs/strategy/2026-07-09-union-layer-positioning.md](docs/strategy/2026-07-09-union-layer-positioning.md) | 定位:为什么做这层、护城河、硬问题 |
 | [docs/reviews/2026-07-08-fable5-architecture-code-product-review.md](docs/reviews/2026-07-08-fable5-architecture-code-product-review.md) | 驱动转向的架构/产品评审 |
 | [docs/claude-code/claude-code-hooks-probe-plan.md](docs/claude-code/claude-code-hooks-probe-plan.md) | CC hooks 真实行为探针结论(金子) |
